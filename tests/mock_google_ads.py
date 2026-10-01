@@ -48,7 +48,8 @@ GAQL_TABLES = {  # GAQL FROM → állapot-típus
     "ad_group_criterion_label": "adGroupCriterionLabel", "asset": "asset", "campaign_asset": "campaignAsset",
     "ad_group_asset": "adGroupAsset", "keyword_view": "adGroupCriterion", "customer": "customer",
     "change_event": "changeEvent", "search_term_view": "searchTerm", "ad_group_ad_asset_view": "adAssetView",
-    "recommendation_subscription": "recommendationSubscription",
+    "recommendation_subscription": "recommendationSubscription", "language_constant": "languageConstant",
+    "geo_target_constant": "geoTargetConstant",
 }
 INT64_KEYS = re.compile(r"^(id|.*Micros|impressions|clicks|criterionId|adGroupId|campaignId|assetId|labelId)$")
 
@@ -71,8 +72,8 @@ def make_service_account(token_uri, email="ads-engine@test-project.iam.gservicea
 
 
 class Fail:
-    def __init__(self, status, code=None, message="hiba", n=1, path=None):
-        self.status, self.code, self.message, self.n, self.path = status, code, message, n, path
+    def __init__(self, status, code=None, message="hiba", n=1, path=None, after=0):
+        self.status, self.code, self.message, self.n, self.path, self.after = status, code, message, n, path, after
 
 
 class MockGoogleAds:
@@ -93,6 +94,13 @@ class MockGoogleAds:
         self.metrics = {}                        # customer_id → [(típus, azonosító, dátum, {metrika})]
         self.change_events = {}                  # customer_id → [dict]
         self.identity = {"verificationProgram": "ADVERTISER_IDENTITY_VERIFICATION", "verificationProgress": {"programStatus": "SUCCESS"}}
+        self.constants = {
+            "languageConstant": [{"resourceName": "languageConstants/1024", "id": "1024", "code": "hu", "name": "Hungarian", "targetable": True},
+                                 {"resourceName": "languageConstants/1000", "id": "1000", "code": "en", "name": "English", "targetable": True}],
+            "geoTargetConstant": [{"resourceName": "geoTargetConstants/2348", "id": "2348", "name": "Hungary", "countryCode": "HU",
+                                   "targetType": "Country", "status": "ENABLED"},
+                                  {"resourceName": "geoTargetConstants/2840", "id": "2840", "name": "United States", "countryCode": "US",
+                                   "targetType": "Country", "status": "ENABLED"}]}
         self.server = None
         self.port = 0
 
@@ -112,7 +120,7 @@ class MockGoogleAds:
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), H)
         self.port = self.server.server_address[1]
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=lambda: self.server.serve_forever(poll_interval=0.05), daemon=True).start()
         return self
 
     def stop(self):
@@ -144,8 +152,9 @@ class MockGoogleAds:
             self.sa_access.add(cid)
         return self
 
-    def fail_next(self, status, code=None, message="hiba", n=1, path=None):
-        self.failures.append(Fail(status, code, message, n, path))
+    def fail_next(self, status, code=None, message="hiba", n=1, path=None, after=0):
+        """A következő n illeszkedő kérés hibát ad; after: ennyi illeszkedő kérést még átenged előtte."""
+        self.failures.append(Fail(status, code, message, n, path, after))
 
     def table(self, cid, typ):
         return self.state.setdefault(cid, {}).setdefault(typ, {})
@@ -189,6 +198,9 @@ class MockGoogleAds:
         with self.lock:
             for f in self.failures:
                 if f.n > 0 and (f.path is None or f.path in path):
+                    if f.after > 0:
+                        f.after -= 1
+                        continue
                     f.n -= 1
                     return f.status, self.err_body(f.status, f.code, f.message)
         auth = headers.get("authorization", "")
@@ -498,6 +510,9 @@ class MockGoogleAds:
         if typ == "customer":
             acc = self.accounts[cid]
             sources.append({"customer": json.loads(json.dumps(acc))})
+        elif typ in self.constants:
+            for obj in self.constants[typ]:
+                sources.append({camel(frm): json.loads(json.dumps(obj))})
         else:
             for name, r in self.state.get(cid, {}).get(typ, {}).items():
                 # kapcsolt erőforrások (kampány → keret; hirdetés/kulcsszó → hirdetéscsoport → kampány)

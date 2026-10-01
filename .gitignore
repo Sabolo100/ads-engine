@@ -20,3 +20,7 @@ __pycache__/
 *.sqlite-wal
 *.sqlite-shm
 STOP
+
+# Helyi virtuális környezet
+.venv/
+venv/

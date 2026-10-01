@@ -1,0 +1,307 @@
+{
+  "schema_version": 1,
+  "project": {
+    "slug": "pacsi",
+    "name": "Pacsi",
+    "site": "https://pacsit.hu",
+    "language": "hu",
+    "country": "HU"
+  },
+  "product": {
+    "summary": "A Pacsi vizuális kutyafajta-választó: 124 népszerű fajta egy élő felhőben, szűrőkkel (lakás, gyerek, mozgás, ugatás, szőrhullás), 10 kérdéses Párkereső kvízzel és összehasonlítással. Ingyenes, regisztráció nélkül használható, telefonra appként is telepíthető. A célja a felelős kutyaválasztás: hogy mindenki olyan kutyát válasszon, amelyik tényleg illik az életéhez.",
+    "offer": "Ingyenes, regisztráció nélküli kutyafajta-választó és 1 perces Párkereső kvíz.",
+    "audiences": [
+      {
+        "id": "tervezok",
+        "name": "Kutyát tervezők, akik még nem tudják, melyik fajta illik hozzájuk",
+        "needs": [
+          "biztos, átlátható döntés",
+          "tudni, mire számíthatnak a fajtával"
+        ],
+        "search_intents": [
+          "melyik kutyafajta illik hozzám",
+          "kutyafajta választó",
+          "milyen kutyát válasszak"
+        ]
+      },
+      {
+        "id": "csaladok",
+        "name": "Családok gyerekkel",
+        "needs": [
+          "türelmes, gyerekekkel jól bánó fajta"
+        ],
+        "search_intents": [
+          "gyerekbarát kutyafajták",
+          "családi kutya fajták"
+        ]
+      },
+      {
+        "id": "lakasban",
+        "name": "Lakásban élők",
+        "needs": [
+          "lakásban jól tartható, nem túl hangos fajta"
+        ],
+        "search_intents": [
+          "lakásban tartható kutyafajták",
+          "csendes kutyafajták"
+        ]
+      },
+      {
+        "id": "kezdok",
+        "name": "Első kutyájukat keresők",
+        "needs": [
+          "kezdőknek is jó fajta"
+        ],
+        "search_intents": [
+          "első kutya",
+          "kezdőknek való kutyafajták"
+        ]
+      }
+    ],
+    "usps": [
+      "Ingyenes",
+      "Regisztráció nélkül",
+      "124 fajta",
+      "Magyarul",
+      "Telepíthető app"
+    ],
+    "facts": [
+      {
+        "id": "fajtak",
+        "text": "Az app 124 népszerű, Európában tartott kutyafajtát mutat.",
+        "numbers": [
+          "124"
+        ]
+      },
+      {
+        "id": "kviz",
+        "text": "A Párkereső kvíz 10 kérdésből áll, kb. 1 percig tart, a végén a top 5 fajtát mutatja.",
+        "numbers": [
+          "10",
+          "1",
+          "5"
+        ]
+      },
+      {
+        "id": "ingyenes",
+        "text": "Az app ingyenes.",
+        "tokens": [
+          "ingyenes",
+          "ingyen"
+        ]
+      },
+      {
+        "id": "regisztracio",
+        "text": "Regisztráció és belépés nélkül használható.",
+        "tokens": [
+          "regisztráció nélkül"
+        ]
+      },
+      {
+        "id": "szurok",
+        "text": "Szűrők: lakás, gyerek, mozgás, ugatás, szőrhullás, kezdő gazdinak, ápolás és más szempontok."
+      },
+      {
+        "id": "osszehasonlitas",
+        "text": "A fajták egymás mellé tehetők és összehasonlíthatók."
+      },
+      {
+        "id": "magyar",
+        "text": "Az app magyar nyelvű."
+      },
+      {
+        "id": "telepitheto",
+        "text": "Telefonra appként telepíthető, telepítés után offline is működik."
+      }
+    ]
+  },
+  "voice": {
+    "tone": "Tegező, meleg, kedves, rövid mondatok. Nem infantilis, nem reklámszagú. A döntés mindig a gazdié: „illik hozzád”.",
+    "avoid": [
+      "tökéletes kutya ígérete",
+      "olyan állítás, ami a fajtakártyán nincs",
+      "reklámszagú felsőfokok",
+      "a „Párkereső” szó a hirdetésekben (társkereső-asszociáció, a Google „társkereső” szabályát válthatja ki): a kvízt „kutyafajta kvíz”-nek hívd"
+    ],
+    "forbidden_words": [
+      "tökéletes",
+      "garantált",
+      "csodaszer",
+      "gyógyít",
+      "allergiamentes",
+      "hipoallergén",
+      "olcsó",
+      "akció",
+      "kedvezmény",
+      "eladó",
+      "vásárlás",
+      "párkereső",
+      "társkereső"
+    ],
+    "forbidden_claims": [
+      "Ne ígérj „tökéletes kutyát”, és ne írd, hogy „ez a te kutyád”.",
+      "Ne állíts egészségügyi vagy allergiával kapcsolatos hatást.",
+      "Ne ajánlj tenyésztőt, eladót vagy konkrét kutyát megvételre.",
+      "Ne használd fel versenytárs nevét."
+    ]
+  },
+  "compliance": {
+    "category": "none",
+    "notes": "Kutyafajta-ajánló eszköz; nem árul és nem ajánl élő állatot. Nincs egészségügyi vagy pénzügyi állítás."
+  },
+  "landing_pages": [
+    {
+      "id": "home",
+      "url": "https://pacsit.hu/",
+      "purpose": "Kezdőlap: a fajta-felhő és a szűrők (általános kutyaválasztó szándék)."
+    },
+    {
+      "id": "kviz",
+      "url": "https://pacsit.hu/kviz",
+      "purpose": "A Párkereső kvíz azonnal indul (kvíz, teszt, „melyik illik hozzám” keresésekre)."
+    },
+    {
+      "id": "fajtak",
+      "url": "https://pacsit.hu/fajtak",
+      "purpose": "Lista nézet keresővel és szűrőkkel (összehasonlítás, fajták böngészése)."
+    },
+    {
+      "id": "gyerekbarat",
+      "url": "https://pacsit.hu/gyerekbarat",
+      "purpose": "A Gyerekbarát szűrő bekapcsolva (családok, gyerek mellé való kutya)."
+    },
+    {
+      "id": "lakas",
+      "url": "https://pacsit.hu/lakas",
+      "purpose": "A Lakásba való szűrő bekapcsolva (lakásban tartható kutyák)."
+    },
+    {
+      "id": "hirlevel",
+      "url": "https://pacsit.hu/hirlevel/",
+      "purpose": "Feliratkozás a heti Pacsi-levélre."
+    }
+  ],
+  "keywords": {
+    "core": [
+      "kutyafajta választó",
+      "melyik kutyafajta illik hozzám",
+      "milyen kutyát válasszak",
+      "kutyafajta kvíz",
+      "kutyafajta kereső",
+      "kutyafajták összehasonlítása"
+    ],
+    "negatives": [
+      "eladó",
+      "kölyök eladó",
+      "kölyökkutya eladó",
+      "vásárlás",
+      "apróhirdetés",
+      "tenyésztő",
+      "tenyésztők",
+      "tenyésztés",
+      "ingyen elvihető",
+      "ingyen kutya",
+      "kutyakozmetika",
+      "kutyaiskola",
+      "kutyaszálló",
+      "kutyapanzió",
+      "állatorvos",
+      "kutyaruha",
+      "kutyatáp",
+      "kutyaeledel",
+      "kutyakaja",
+      "kutyajáték",
+      "póráz",
+      "nyakörv",
+      "kutyanevek",
+      "kutyanév",
+      "oltás",
+      "féreghajtó",
+      "chip",
+      "rajz",
+      "színező",
+      "film",
+      "mese",
+      "letöltés",
+      "pdf"
+    ],
+    "competitor_brands": []
+  },
+  "tracking": {
+    "umami_website_id": "54fc0966-6e5f-4ad6-b8c3-7ea5af9642e9",
+    "engaged_events": [
+      "bevont"
+    ],
+    "key_events": [
+      "kviz-kesz",
+      "kartya"
+    ]
+  },
+  "ads": {
+    "max_cpc": 150,
+    "business_name": "Pacsi"
+  },
+  "brand": {
+    "colors": {
+      "primary": "#FF6B3D",
+      "primary_dark": "#C8431C",
+      "accent": "#FFC845",
+      "background": "#FBF6EE",
+      "text": "#1E1B18"
+    },
+    "fonts": [
+      "Fraunces",
+      "Manrope"
+    ],
+    "logo": "img/logo-1200.jpg",
+    "image_style_prompt": "Painterly gouache illustration in a warm premium children's-book-meets-editorial style: subtle paper grain, visible soft brush strokes, consistent soft lighting from the upper left, breed-accurate coats and proportions. No text, no letters, no numbers, no logos, no watermark anywhere in the image. Keep the main subjects inside the central 80 percent of the width so the picture can be cropped. The Pacsi mascot: a fluffy, scruffy mixed-breed puppy with a cream-white wavy coat and warm ginger patches on the floppy ears and around the eyes, big shiny dark eyes, black nose, a happy open mouth with a pink tongue, wearing a coral-orange bandana (#EE5A2C) with a tiny white flower pattern.",
+    "reference_images": [
+      "img/osz-tura-1200x628.jpg",
+      "img/highfive-1200x1200.jpg"
+    ]
+  },
+  "seasonality": [
+    {
+      "month": 10,
+      "themes": [
+        "őszi séta",
+        "Halloween"
+      ]
+    },
+    {
+      "month": 11,
+      "themes": [
+        "sötét séta",
+        "téli készülődés"
+      ]
+    },
+    {
+      "month": 12,
+      "themes": [
+        "ünnepek",
+        "Mikulás",
+        "szilveszter"
+      ]
+    },
+    {
+      "month": 1,
+      "themes": [
+        "újévi fogadalmak",
+        "felelős kutyaválasztás"
+      ]
+    },
+    {
+      "month": 3,
+      "themes": [
+        "tavaszi séták"
+      ]
+    },
+    {
+      "month": 5,
+      "themes": [
+        "nyári túrák"
+      ]
+    }
+  ],
+  "creatives_url": "creatives.json"
+}

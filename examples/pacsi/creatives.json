@@ -1,0 +1,336 @@
+{
+  "schema_version": 1,
+  "version": "2026-10-01.1",
+  "adsets": [
+    {
+      "id": "kviz",
+      "channel": "search",
+      "theme": "Kutyafajta-választó kvíz",
+      "landing": "kviz",
+      "headlines": [
+        "Melyik kutya illik hozzád?",
+        "Kutyafajta-választó kvíz",
+        "1 perces kutyafajta kvíz",
+        "Ingyenes kutyafajta kvíz",
+        "Regisztráció nélkül",
+        "124 kutyafajta egy helyen",
+        "Találd meg az illő kutyát",
+        "10 kérdés, top 5 fajta",
+        "Derítsd ki, melyik fajta illik",
+        "Kutyafajta kereső magyarul",
+        "Neked való kutyafajta",
+        "Szűrés lakás és gyerek szerint",
+        "Kutyaválasztás könnyedén",
+        "Pacsi kutyafajta-választó",
+        "Ingyenes, regisztráció nélkül"
+      ],
+      "descriptions": [
+        "Töltsd ki az ingyenes kutyafajta kvízt, és nézd meg a hozzád illő top 5 fajtát.",
+        "124 kutyafajta, szűrők, összehasonlítás. Regisztráció nélkül, magyarul, telefonon is.",
+        "Lakás, gyerek, mozgás, ugatás, szőrhullás: kapcsold be, ami számít, és válassz tudatosan.",
+        "10 kérdés, 1 perc. Ingyenes, nincs regisztráció. A döntés a tiéd, a Pacsi segít."
+      ],
+      "keywords": [
+        {
+          "text": "kutyafajta választó",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutyafajta választó",
+          "match": "EXACT"
+        },
+        {
+          "text": "kutyafajta kvíz",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutyafajta teszt",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutyafajta teszt",
+          "match": "EXACT"
+        },
+        {
+          "text": "melyik kutyafajta illik hozzám",
+          "match": "PHRASE"
+        },
+        {
+          "text": "melyik kutya illik hozzám",
+          "match": "PHRASE"
+        },
+        {
+          "text": "melyik kutya illik hozzám",
+          "match": "EXACT"
+        },
+        {
+          "text": "milyen kutyát válasszak",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutyafajta kereső",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutyaválasztó teszt",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutya kvíz",
+          "match": "PHRASE"
+        }
+      ],
+      "path1": "kutyafajta",
+      "path2": "kviz"
+    },
+    {
+      "id": "csalad",
+      "channel": "search",
+      "theme": "Családi, gyerekbarát kutyák",
+      "landing": "gyerekbarat",
+      "headlines": [
+        "Gyerekbarát kutyafajták",
+        "Kutya a családnak",
+        "Szűrj gyerekbarát fajtákra",
+        "124 fajta, szűrők, kvíz",
+        "Ingyenes, regisztráció nélkül",
+        "Melyik kutya illik hozzátok?",
+        "Találd meg a családi kutyát",
+        "Gyerek mellé való kutyák",
+        "Kutyás kvíz családoknak",
+        "Kutyafajta-választó",
+        "Pacsi: kutyafajta-választó",
+        "Türelmes fajták szűrése",
+        "Családi kutya, átgondolva"
+      ],
+      "descriptions": [
+        "Szűrd a 124 fajtát gyerekbarát kutyákra. Ingyenes, regisztráció nélkül, magyarul.",
+        "Gyerek mellé is jó társat keresel? Töltsd ki a 10 kérdéses kvízt, és hasonlíts össze.",
+        "Lakás, gyerek, mozgás, ugatás, szőrhullás: kapcsold be, ami számít a családodnak.",
+        "Nézd meg, melyik fajta illik a családodhoz. A döntés a tiétek, a Pacsi segít átlátni."
+      ],
+      "keywords": [
+        {
+          "text": "gyerekbarát kutyafajták",
+          "match": "PHRASE"
+        },
+        {
+          "text": "gyerekbarát kutyafajták",
+          "match": "EXACT"
+        },
+        {
+          "text": "gyerekbarát kutya",
+          "match": "PHRASE"
+        },
+        {
+          "text": "családi kutya fajták",
+          "match": "PHRASE"
+        },
+        {
+          "text": "családi kutyafajták",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutya gyerek mellé",
+          "match": "PHRASE"
+        },
+        {
+          "text": "melyik kutya való gyerek mellé",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutyafajták gyerekeknek",
+          "match": "PHRASE"
+        }
+      ],
+      "path1": "gyerekbarat",
+      "path2": "kutyak"
+    },
+    {
+      "id": "lakas",
+      "channel": "search",
+      "theme": "Lakásban tartható kutyák",
+      "landing": "lakas",
+      "headlines": [
+        "Lakásba való kutyafajták",
+        "Kutya a lakásba",
+        "Szűrés: lakásba való",
+        "124 fajta, szűrők, kvíz",
+        "Ingyenes, regisztráció nélkül",
+        "Melyik kutya illik a lakásba?",
+        "Csendes kutyák keresése",
+        "Városi lakás, jó társ",
+        "Kistestű kutyák szűrése",
+        "Kutyafajta-választó",
+        "Pacsi: kutyafajta-választó",
+        "Lakásban élő kutyák",
+        "Válassz tudatosan"
+      ],
+      "descriptions": [
+        "Szűrd a 124 fajtát a lakásba való kutyákra. Ingyenes, regisztráció nélkül, magyarul.",
+        "Városi lakásban élsz? Kapcsold be a lakás és a csendes szűrőt, és nézd meg a találatokat.",
+        "Töltsd ki a 10 kérdéses kvízt: megmutatja, melyik fajta illik a lakásodhoz.",
+        "Lakás, gyerek, mozgás, ugatás, szőrhullás: kapcsold be, ami számít, és hasonlíts össze."
+      ],
+      "keywords": [
+        {
+          "text": "lakásban tartható kutyafajták",
+          "match": "PHRASE"
+        },
+        {
+          "text": "lakásban tartható kutyafajták",
+          "match": "EXACT"
+        },
+        {
+          "text": "kutya lakásba",
+          "match": "PHRASE"
+        },
+        {
+          "text": "lakásba való kutyafajták",
+          "match": "PHRASE"
+        },
+        {
+          "text": "lakásba való kutya",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kistestű kutyafajták",
+          "match": "PHRASE"
+        },
+        {
+          "text": "csendes kutyafajták",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutya panelba",
+          "match": "PHRASE"
+        }
+      ],
+      "path1": "lakas",
+      "path2": "kutyak"
+    },
+    {
+      "id": "osszehasonlitas",
+      "channel": "search",
+      "theme": "Fajták összehasonlítása",
+      "landing": "fajtak",
+      "headlines": [
+        "Kutyafajták összehasonlítása",
+        "Kutyafajta-választó",
+        "124 kutyafajta egy helyen",
+        "Hasonlíts össze fajtákat",
+        "Ingyenes, regisztráció nélkül",
+        "Kutyafajták tulajdonságai",
+        "Szűrők és kereső",
+        "Fajták egymás mellett",
+        "Pacsi: kutyafajta-választó",
+        "Neked való kutyafajta",
+        "Böngészd a fajtákat",
+        "Magyarul, telefonról is",
+        "Kutyafajta kvíz, 1 perc"
+      ],
+      "descriptions": [
+        "Böngészd a 124 kutyafajtát, szűrj és hasonlíts össze. Ingyenes, regisztráció nélkül.",
+        "Tedd egymás mellé a fajtákat, és nézd meg, miben különböznek. Magyarul, telefonról is.",
+        "Nem tudod, hol kezdd? Töltsd ki az 1 perces kvízt, és kapsz egy top 5 listát.",
+        "Lakás, gyerek, mozgás, ugatás, szőrhullás: kapcsold be, ami számít a döntéshez."
+      ],
+      "keywords": [
+        {
+          "text": "kutyafajták összehasonlítása",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutyafajták összehasonlítása",
+          "match": "EXACT"
+        },
+        {
+          "text": "kutyafajta összehasonlítás",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutyafajták összehasonlító",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutyafajták jellemzői",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutyafajták tulajdonságai",
+          "match": "PHRASE"
+        },
+        {
+          "text": "kutyafajták közötti különbségek",
+          "match": "PHRASE"
+        },
+        {
+          "text": "fajták összehasonlítása kutya",
+          "match": "PHRASE"
+        }
+      ],
+      "path1": "fajtak",
+      "path2": "osszehasonlitas"
+    }
+  ],
+  "sitelinks": [
+    {
+      "text": "Kutyafajta kvíz",
+      "description1": "10 kérdés, 1 perc",
+      "description2": "Ingyenes, regisztráció nélkül",
+      "landing": "kviz"
+    },
+    {
+      "text": "Fajták böngészése",
+      "description1": "124 kutyafajta",
+      "description2": "Szűrők és kereső",
+      "landing": "fajtak"
+    },
+    {
+      "text": "Gyerekbarát kutyák",
+      "description1": "Szűrés családoknak",
+      "description2": "Ingyenes",
+      "landing": "gyerekbarat"
+    },
+    {
+      "text": "Lakásba való kutyák",
+      "description1": "Szűrés városi lakáshoz",
+      "description2": "Ingyenes",
+      "landing": "lakas"
+    },
+    {
+      "text": "Heti kutyás levél",
+      "description1": "Kutyás tippek hetente",
+      "description2": "Feliratkozás egy kattintással",
+      "landing": "hirlevel"
+    }
+  ],
+  "callouts": [
+    "Ingyenes",
+    "Regisztráció nélkül",
+    "124 kutyafajta",
+    "10 kérdéses kvíz",
+    "Magyar nyelvű",
+    "Telepíthető app"
+  ],
+  "images": [
+    {
+      "id": "osz-tura",
+      "file": "img/osz-tura-1200x628.jpg",
+      "ratio": "1.91:1",
+      "alt": "Egy magyar vizsla és a Pacsi kabala őszi erdei sétán"
+    },
+    {
+      "id": "highfive",
+      "file": "img/highfive-1200x1200.jpg",
+      "ratio": "1:1",
+      "alt": "A Pacsi kabala mancsot ad egy kinyújtott kéznek"
+    },
+    {
+      "id": "lineup",
+      "file": "img/lineup-1200x628.jpg",
+      "ratio": "1.91:1",
+      "alt": "Sorban álló, különböző méretű és fajtájú kutyák"
+    }
+  ]
+}
