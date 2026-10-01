@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS counters (
 CREATE TABLE IF NOT EXISTS snapshots (
   id INTEGER PRIMARY KEY AUTOINCREMENT, project TEXT NOT NULL, kind TEXT NOT NULL, ts TEXT NOT NULL, data TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS snapshots_pk ON snapshots(project, kind, id);
+CREATE TABLE IF NOT EXISTS llm_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, project TEXT, purpose TEXT NOT NULL, ts TEXT NOT NULL, model TEXT, effort TEXT,
+  status TEXT NOT NULL, input_chars INTEGER, input_tokens INTEGER, output_tokens INTEGER, output TEXT, request_id TEXT, error TEXT);
 """
 
 
@@ -216,6 +219,24 @@ class Store:
                 "INSERT INTO counters(project, key, period, n) VALUES(?,?,?,?) "
                 "ON CONFLICT(project, key, period) DO UPDATE SET n = n + excluded.n", (project, key, period, n))
         return self.counter(project, key, period)
+
+    # ------------------------------------------------------------------ AI-hívások naplója (a nyers kimenet is, ellenőrzéshez)
+    def log_llm(self, project, purpose, model, effort, status, input_chars=0, input_tokens=0, output_tokens=0, output="", request_id="", error=""):
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT INTO llm_log(project, purpose, ts, model, effort, status, input_chars, input_tokens, output_tokens, output, request_id, error) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (project, purpose, _now_iso(), model, effort, status, input_chars, input_tokens, output_tokens, output, request_id, error))
+            return cur.lastrowid
+
+    def llm_calls(self, project=None, purpose=None, limit=50):
+        q, args = "SELECT * FROM llm_log WHERE 1=1", []
+        for col, val in (("project", project), ("purpose", purpose)):
+            if val is not None:
+                q += f" AND {col}=?"
+                args.append(val)
+        with self._lock:
+            return [dict(r) for r in self._db.execute(q + " ORDER BY id DESC LIMIT ?", args + [limit]).fetchall()]
 
     # ------------------------------------------------------------------ pillanatképek
     def snapshot_put(self, project, kind, data, keep=20):
