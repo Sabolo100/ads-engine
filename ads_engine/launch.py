@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from . import builder, factory, images as imgs, net, pack as packmod, reportdata
 from .executor import Executor, WriteRefused, enable_campaign_ops
 from .google.client import GoogleAdsError
-from .guardrails import ENGINE_LABEL, MICROS
+from .guardrails import ENGINE_LABEL, MICROS, round_budget_micros
 
 
 class LaunchError(Exception):
@@ -180,7 +180,7 @@ def go_live(settings, project, store, client, run_id, weekly_budget, *, today=No
     if not found:
         raise LaunchError(f"Nincs „{name}” kampány: előbb futtasd a launch parancsot.")
     camp = found["campaign"]
-    daily = int(round(weekly_budget * MICROS / 7))
+    daily = round_budget_micros(weekly_budget * MICROS / 7, project.currency)         # a heti keret 1/7-e, a pénznem legkisebb egységére kerekítve
     budget_rn = camp["campaignBudget"]
     ops = [{"campaignBudgetOperation": {"update": {"resourceName": budget_rn, "amountMicros": str(daily)}, "updateMask": "amountMicros"}},
            {"campaignOperation": {"update": {"resourceName": camp["resourceName"], "status": "ENABLED"}, "updateMask": "status"}}]

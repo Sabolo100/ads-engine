@@ -26,6 +26,16 @@ def fmt(micros_value, currency="HUF"):
     return f"{int(round(micros_value / MICROS)):,}".replace(",", " ") + f" {currency}"
 
 
+CURRENCY_UNIT_MICROS = {"HUF": 1_000_000, "JPY": 1_000_000, "KRW": 1_000_000, "VND": 1_000_000, "CLP": 1_000_000}   # tört egység nélküli pénznemek: egész egységekben adjuk meg
+DEFAULT_UNIT_MICROS = 10_000                                                                                          # a többi pénznem: legkisebb számlázható egység (0,01)
+
+
+def round_budget_micros(micros, currency):
+    """A keret a pénznem legkisebb egységének többszöröse legyen (a Google elutasítja a nem többszörösét: NON_MULTIPLE_OF_MINIMUM_CURRENCY_UNIT)."""
+    unit = CURRENCY_UNIT_MICROS.get(currency, DEFAULT_UNIT_MICROS)
+    return max(unit, int(round(micros / unit)) * unit)
+
+
 def weekly_from_daily(daily_micros):
     return int(daily_micros) * 7
 

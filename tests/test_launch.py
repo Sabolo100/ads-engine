@@ -295,6 +295,14 @@ class GoLiveTests(unittest.TestCase):
     def tearDown(self):
         self.e.close()
 
+    def test_go_live_rounds_the_daily_budget_to_a_valid_currency_unit(self):
+        res = launch.go_live(self.e.settings, self.e.project, self.e.store, self.e.client, 2, weekly_budget=10_000)          # 10 000 / 7 = 1 428,57
+        self.assertEqual(res["daily_micros"], 1429 * M)                                                                       # egész forint: a Google a törtet elutasíthatja
+        from ads_engine import guardrails
+        self.assertEqual(guardrails.round_budget_micros(1_428_571_428, "HUF"), 1429 * M)
+        self.assertEqual(guardrails.round_budget_micros(1_428_571_428, "EUR"), 1_428_570_000)                                 # a törtegységes pénznem: 0,01-re
+        self.assertEqual(guardrails.round_budget_micros(100, "HUF"), M)                                                       # legalább egy egység
+
     def test_go_live_sets_budget_and_enables_atomically(self):
         res = launch.go_live(self.e.settings, self.e.project, self.e.store, self.e.client, 2, weekly_budget=21_000)
         self.assertEqual(res["status"], "enabled")
