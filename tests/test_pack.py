@@ -375,6 +375,19 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(pad.mode, "pad")
         self.assertEqual((pad.width, pad.height), (1200, 628))
 
+    def test_a_busy_image_is_never_padded_with_a_blurred_background(self):
+        """A Google a Search kép-eszközön tiltja az elmosott képet: nem egyöntetű szélű képnél nincs kitöltés, hanem hiba."""
+        import random
+        rnd = random.Random(7)
+        im = Image.new("RGB", (3000, 1000))
+        im.putdata([(rnd.randrange(256), rnd.randrange(256), rnd.randrange(256)) for _ in range(3000 * 1000)])
+        buf = io.BytesIO()
+        im.save(buf, "PNG")
+        with self.assertRaises(images.ImageError) as cm:
+            images.prepare(buf.getvalue(), "landscape")
+        self.assertIn("elmosott", str(cm.exception))
+        self.assertEqual(images.prepare(buf.getvalue(), "square", mode="cover").mode, "cover")        # a vágás (elmosás nélkül) továbbra is jó
+
     def test_pad_uses_edge_color_for_uniform_borders(self):
         im = Image.new("RGB", (3000, 1000), (251, 246, 238))
         im.paste((10, 10, 10), (1400, 400, 1600, 600))

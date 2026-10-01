@@ -190,3 +190,15 @@ def ad_content_rows(client, cid, ids):
                     "path1": rsa.get("path1", ""), "path2": rsa.get("path2", ""), "final_urls": a.get("ad", {}).get("finalUrls", []),
                     "resource_name": a.get("resourceName", "")})
     return out
+
+
+def image_rows(client, cid, ids, since, until):
+    """A kampányokhoz kötött kép-eszközök: [{campaign_id, resource_name (a kötésé), asset_name, status, impressions, clicks}]."""
+    out = []
+    if not ids:
+        return out
+    for r in client.search(cid, gaql.image_assets(ids, since, until)):
+        ca, a = r.get("campaignAsset", {}), r.get("asset", {})
+        out.append({"campaign_id": str(r.get("campaign", {}).get("id", "")), "resource_name": ca.get("resourceName", ""), "status": ca.get("status", ""),
+                    "asset_id": str(a.get("id", "")), "asset_name": a.get("name", ""), **{k: v for k, v in _m(r).items() if k != "cost_micros"}})
+    return out

@@ -12,6 +12,7 @@ Minden időpont `Europe/Budapest`. Az ütemező percenként léptet; a feladatok
 | hétfőn 07:00 | `weekly` | kiértékelés (múlt hét + trend, Google + Umami) → javaslatok → szabályok → végrehajtás → **magyar heti levél**. Csak akkor indul, ha aznap a napi szinkron lefutott. |
 | óránként | `guard` | a nyitóoldal elérhetősége (az UTM megmarad-e); két egymás utáni hibára szünetelteti a kampányt |
 | havonta | `apicheck` | a Google Ads API verziójának élete: lejárat, újabb főverzió, változott leíró |
+| havonta, az 1. napon 07:30 után | `monthly` | **havi terv**: a hónap témája, új kulcsszavak, hirdetési szempontok, kísérletek, tanulságok → levél (a napi szinkron után; pótolható a hónap végéig) |
 
 Hiba esetén a feladat 30 perc múlva újrapróbálkozik (időszakonként legfeljebb három próbálkozás), és **levelet küld** (az utolsó sikertelen próbáról külön). Egyszerre egy példány dolgozhat (zár a `/data` kötetben), így a Coolify frissítésekor sem fut dupla.
 
@@ -26,6 +27,8 @@ Hiba esetén a feladat 30 perc múlva újrapróbálkozik (időszakonként legfel
 | **Hirdetésszöveg-csere** | a Google legalább 3 szöveget gyengének (LOW) jelez; az új szöveg átmegy minden validátoron (hossz, tiltott szó, **tények**); új RSA készül, a régi szünetel; a kitűzött szöveget nem cseréli | 2 / hét, hirdetéscsoportonként 14 naponta |
 | **Elutasított hirdetés** | szöveg okú elutasításnál új RSA a kifogásolt szöveg nélkül (60 napon belül legfeljebb 2 kísérlet csoportonként), utána a hirdetés szünetel; nem szöveg okú ok (nyitóoldal, szabályzat) esetén csak szól | – |
 | **Brief-változás** | ha a projekt briefje megváltozott (új tiltott szó, tény, versenytárs-márka), az élő hirdetéseket és kulcsszavakat újraellenőrzi; a szabálysértők szünetelnek | – |
+| **Új kulcsszó** (havi terv) | az AI javasol; a kód csak MEGLÉVŐ hirdetéscsoportba engedi: ≤ 10 szó, legalább két szó, a magkifejezésekhez közel, nem tiltott szó, nem versenytárs, nem ütközik negatívval, nem duplikátum, a csoport nincs „kézben” | 10 / hónap |
+| **Képek** (kreatív-gyár) | a projekt saját képei (ha az indításkor nem fértek fel), ingyenes vágásváltozatok, új AI-kulcsvizuálok – csak ha a Google már engedi (lásd lent), és csak képnézés után | AI-kép: `max_images_per_week` (alap 10), a motor heti célja 3; ≤ 15 bekapcsolt kép / kampány |
 
 **Megfigyelési időszak:** a go-live után **14 napig** csak a biztonsági fékek és az elutasított hirdetések javítása működik; a kulcsszavakhoz és a szövegekhez nem nyúl.
 
@@ -34,6 +37,17 @@ Hiba esetén a feladat 30 perc múlva újrapróbálkozik (időszakonként legfel
 **Ha te nyúlsz hozzá:** a motor a Google változás-eseményeiből és az utolsó ismert állapotból észleli, ha ember (vagy automatikus szabály/ajánlás) módosított egy objektumot. Az ilyen objektum **28 napig „kézben van”**: a motor nem írja felül, és szól. Ha a *kampányt* módosítod, az egész kampányt békén hagyja; a **keret** módosítása nem számít ilyennek (azt átveszi).
 
 Hogy a motor milyen számokat mér, és miért nem konverziót: a süti nélküli oldal ígérete miatt a minőség-őr a **költség / bevont látogatás** az Umami-ból (`bevont` esemény). Az olcsó, de azonnal visszapattanó kattintást nem hajszolja.
+
+### Képek – amit a Google szabálya megszab
+
+A Search kampány **kép-bővítményére** a Google szigorú szabályokat ír, és ezek az ötletünket is alakítják:
+- **Szöveg, felirat és logó nem lehet a képen** (a Performance Max kivétel, a Search nem), utólag szerkesztett kollázs vagy keret sem, és a kép nem lehet elmosott, életlen, torz vagy rosszul vágott. Ezért a motor **képre szöveget nem tesz** – a szövegváltozat a hirdetésszövegekben (RSA) készül –, a képeknél a **vágás/méret** és az új, **szövegmentes kulcsvizuál** a változó.
+- A fióknak legalább **60 naposnak** kell lennie, jó szabályzati előzménnyel, aktív szöveges hirdetéssel és az elmúlt 30 napban költéssel. Ezért az új fiókon a kép-bővítmény eleinte nem működik: a motor a kampányt képek nélkül hozza létre (ez nem hiba), és a heti körben **egy `validateOnly` próbával megnézi, hogy a fiók már jogosult-e**. Amíg nem az, semmit nem készít és **AI-képre sem költ**.
+
+A gyár forrásai: (1) a projekt saját képei (védettek: soha nem szünetelnek; ha az indításkor nem fértek fel, a heti kör pótolja), (2) ingyenes vágásváltozatok ugyanabból a képből (legfeljebb 30 % vágással, elmosott kitöltés nélkül), (3) új AI-kulcsvizuálok (`gpt-image-2`, a brief `brand.image_style_prompt` mezőjével).
+- **AI-kép költsége és kerete:** hetente legfeljebb a projekt kerete (`max_images_per_week`, alap 10; a motor heti célja 3). A számláló az OpenAI-hívás **előtt** nő, a sikertelen kérés is beleszámít, kulcs- vagy keret-hibánál a motor leáll. **Próbaüzemben (`dry`) AI-képet nem kér.**
+- **Képnézés:** minden AI-képet Claude néz át (szöveg vagy logó a képen, rajzolási hiba, elmosottság, túl sok üres felület, tiltott tartalom); ellenőrző (`ANTHROPIC_API_KEY`) nélkül AI-kép **nem kerül fel**.
+- **Kapacitás:** kampányonként legfeljebb 15 bekapcsolt kép. A helyet a leggyengébb kattintási arányú, **a motor által készített**, legalább 14 napos, elég megjelenést látott kép **szüneteltetése** adja (törlés soha, a projekt saját képe soha).
 
 ## 3. Biztonsági fékek
 
@@ -79,6 +93,7 @@ python -m ads_engine launch [--yes]                    szüneteltetett kampány 
 python -m ads_engine go-live --weekly-budget N --yes   a keret beállítása és a kampány bekapcsolása
 python -m ads_engine sync                              a napi szinkron és a védelmek azonnal
 python -m ads_engine weekly [--mail] [--no-ai] [--yes]  a heti kör azonnal (élesben módosít, ezért --yes kell); --mail: levél is megy
+python -m ads_engine monthly [--mail] [--yes]          a havi terv azonnal (élesben új kulcsszavakat ír, ezért --yes kell)
 python -m ads_engine report                            az utolsó heti jelentés
 python -m ads_engine confirm-budget --yes [--enable]   a Google Ads-ben látható keret elfogadása fék után
 python -m ads_engine stop | resume                     a STOP fájl létrehozása / törlése
@@ -98,6 +113,8 @@ Minden a `/data` kötetben van (a Coolify tartós tárolója; ezt érdemes mente
 |---|---|
 | `engine.sqlite` | a motor állapota: jóváhagyott keret, go-live dátum, futások (`runs`), **minden írás előtte/utána értékkel** (`actions`), feladatok (`jobs`), számlálók, az AI-hívások nyers kimenete (`llm_log`) |
 | `reports/<projekt>-<hét vége>.{json,txt,html}` | a heti jelentések |
+| `plans/<projekt>-<hónap>.{json,txt,html}` | a havi tervek |
+| `creatives/<projekt>/` | a motor által készített képek (a nyilvántartás az `engine.sqlite`-ban van: forrás, képnézés, állapot) |
 | `cache/` | a Google Ads API leírója |
 | `STOP` | ha létezik, a motor nem ír |
 
@@ -118,6 +135,9 @@ A verzió egy helyen él (`VERSION`), és látszik a `--version`-ben, a heti lev
 | „Kézben van” üzenet | a motor észlelte a módosításodat; 28 napig nem nyúl az objektumhoz – ez szándékos |
 | `check` hibát ír | a **KÖVETKEZŐ LÉPÉS** sor megmondja, melyik lépés hiányzik (`docs/GOOGLE_ADS_BEALLITAS.md`) |
 | A heti kör nem módosít | megfigyelési időszak (14 nap), nincs Umami-adat, nincs elég kattintás, vagy a heti korlát elfogyott – a jelentés „Amit javasoltam, de a szabályok nem engedtek” része megmondja az okot |
+| Nincsenek képek a kampányban | a jelentés „Képek” jegyzete megmondja: a Google még nem engedi a kép-bővítményt (új fiók: 60 nap, aktív szöveges hirdetés, költés az elmúlt 30 napban), vagy próbaüzem, vagy hiányzik az `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` az AI-képekhez |
+| Az AI-kép elutasítva | a képnézés oka a jelentésben (szöveg a képen, rajzolási hiba…); a kérés pénzbe került, a heti keretből levonódott. Ha gyakori, a brief `brand.image_style_prompt` mezőjét pontosítsd |
+| A havi terv nem készült el | `ANTHROPIC_API_KEY` hiányzik, vagy a brief hibás; `python -m ads_engine monthly` kiírja az okot |
 | `/healthz` 503 | az ütemező-ciklus 10 perce nem lépett: a konténer újraindítása segít; a Coolify naplója mutatja az okot. `?strict=1`: éles kampány mellett 36 órája nem volt sikeres napi szinkron |
 
 **Őszintén a korlátokról:** a motor a kattintások és a webes minőség szerint javít, de **eredményt nem garantál**; kis keretnél kevés az adat, ezért a szabályok óvatosak (14 napos megfigyelés, minimális kattintásszám, heti korlátok). A Google új fiókot és hirdetőt napokig ellenőrizhet, a hirdetések ez alatt nem futnak.

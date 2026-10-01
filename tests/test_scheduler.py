@@ -31,7 +31,8 @@ class SchedBase(ReviewBase):
         patcher = unittest.mock.patch.object(scheduler.discovery, "api_check", return_value={"version": "v25", "ok": True, "notes": []})
         self.api_check = patcher.start()                           # a próbák nem érnek a Google leíró-dokumentumhoz
         self.addCleanup(patcher.stop)
-        self.e.store.job_mark("pacsi", "apicheck", "2026-10", "ok")      # a havi ellenőrzés külön tesztekben szerepel
+        self.e.store.job_mark("pacsi", "apicheck", "2026-10", "ok")      # a havi ellenőrzés és a havi terv külön tesztekben szerepel
+        self.e.store.job_mark("pacsi", "monthly", "2026-10", "ok")
         self.deps = scheduler.Deps(client=self.e.client, llm=self.llm, umami=self.umami, fetch=self.fetch_ok, fetch_kw=self.e.kw, sleep=lambda s: None)
 
     @staticmethod

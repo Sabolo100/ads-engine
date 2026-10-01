@@ -13,7 +13,8 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
-from . import alerts, copywriter, guardrails as g, llm as llmmod, net, pack as packmod, packcheck, reportdata, umami as umamimod, validators
+from .actions import Action  # noqa: F401  (a review.Action név megmarad)
+from . import alerts, builder, copywriter, factory, guardrails as g, launch, llm as llmmod, net, pack as packmod, packcheck, reportdata, umami as umamimod, validators
 from .executor import Executor, WriteRefused
 from .google.client import GoogleAdsError
 from .sync import now_in
@@ -34,21 +35,6 @@ class TermJudgement(BaseModel):
 class TermReview(BaseModel):
     judgements: List[TermJudgement] = Field(default_factory=list, max_length=100)
     summary: str = Field(default="", max_length=800)
-
-
-@dataclasses.dataclass
-class Action:
-    kind: str                 # add_negative | pause_keyword | rotate_rsa | fix_disapproved | pause_ad | pack_pause_ad | pack_pause_keyword
-    target: str
-    reason: str
-    status: str = "proposed"  # proposed | applied | validated | rejected | failed
-    detail: dict = dataclasses.field(default_factory=dict)
-    rejected_because: list = dataclasses.field(default_factory=list)
-
-    def reject(self, *because):
-        self.status = "rejected"
-        self.rejected_because = list(because)
-        return self
 
 
 @dataclasses.dataclass
@@ -185,6 +171,11 @@ def neg_op(campaign_rn, text, match="PHRASE"):
     return [{"campaignCriterionOperation": {"create": {"campaign": campaign_rn, "negative": True, "keyword": {"text": text, "matchType": match}}}}]
 
 
+def add_keyword_ops(customer_id, ad_group_id, text, match):
+    return [{"adGroupCriterionOperation": {"create": {"adGroup": f"customers/{customer_id}/adGroups/{ad_group_id}", "status": "ENABLED",
+                                                      "keyword": {"text": text, "matchType": match}}}}]
+
+
 def pause_keyword_ops(resource_name):
     return [{"adGroupCriterionOperation": {"update": {"resourceName": resource_name, "status": "PAUSED"}, "updateMask": "status"}}]
 
@@ -208,8 +199,11 @@ def rotate_rsa_ops(ad_group_rn, old_ad_rn, final_urls, headlines, descriptions, 
 
 
 # ------------------------------------------------------------------ 3) RSA-csere és elutasított hirdetések
-def rewrite_rsa(llm, slug, brief, c, remove, kw_rows, performance):
-    """Egy RSA új változata: a `remove` szövegek kihullnak, helyükre új, a validátorokon átment szöveg jön. (dict | None, hibák)"""
+def rewrite_rsa(llm, slug, brief, c, remove, kw_rows, performance, angles=None):
+    """Egy RSA új változata: a `remove` szövegek kihullnak, helyükre új, a validátorokon átment szöveg jön. (dict | None, hibák)
+    angles: a havi terv hirdetési szempontjai (a szövegíró bemenete)."""
+    if angles:
+        performance = {**performance, "havi_szempontok": angles}
     rm = {validators.norm(t) for t in remove}
     keep_h = [h for h in c["headlines"] if validators.norm(h) not in rm or h in c["pinned"]]
     keep_d = [d for d in c["descriptions"] if validators.norm(d) not in rm]
@@ -264,7 +258,8 @@ def propose_rotations(contents, labels, kw_rows, brief, llm, slug, store, today,
             out.append(a.reject(*reasons))
             continue
         new, errs = rewrite_rsa(llm, slug, brief, c, [x["text"] for x in low], kw_rows,
-                                {"gyenge_szövegek": [x["text"] for x in low], "legjobb_szövegek": best_by_ad.get(c["ad_id"], [])})
+                                {"gyenge_szövegek": [x["text"] for x in low], "legjobb_szövegek": best_by_ad.get(c["ad_id"], [])},
+                                angles=store.get(f"{slug}.plan.angles"))
         if errs:
             out.append(a.reject(*errs))
             continue
@@ -307,7 +302,7 @@ def propose_disapproved(ad_rows, details, contents, kw_rows, brief, llm, slug, s
         if accepted >= budget_left:
             out.append(a.reject(f"heti korlát ({g.MAX_ROTATIONS_PER_WEEK} csere)"))
             continue
-        new, errs = rewrite_rsa(llm, slug, brief, c, texts, kw_rows, {"elutasított_szövegek": texts, "szabály": topics})
+        new, errs = rewrite_rsa(llm, slug, brief, c, texts, kw_rows, {"elutasított_szövegek": texts, "szabály": topics}, angles=store.get(f"{slug}.plan.angles"))
         if errs:
             out.append(a.reject(*errs))
             continue
@@ -323,7 +318,7 @@ def _kw_view(r):
     return {k: r[k] for k in ("text", "match", "ad_group", "status", "clicks", "impressions", "cost_micros", "quality_score")}
 
 
-def run_weekly(settings, project, store, client, run_id, *, llm=None, umami_client=None, today=None, now=None, fetch=net.fetch, **fetch_kw):
+def run_weekly(settings, project, store, client, run_id, *, llm=None, umami_client=None, openai=None, renew=None, today=None, now=None, fetch=net.fetch, **fetch_kw):
     """A heti kör. ReviewResult-ot ad (jelentés + műveletek); a levelet a hívó (scheduler/CLI) küldi."""
     slug, cid = project.slug, project.customer_id
     now = now or now_in(project)
@@ -403,6 +398,8 @@ def run_weekly(settings, project, store, client, run_id, *, llm=None, umami_clie
         base["notes"].append("Még nincs go-live: a kampányok szüneteltetve vannak, nincs mit optimalizálni.")
     elif brief is None:
         pass
+    elif g.requires_human(brief):
+        base["notes"].append("A projekt szabályozott területen van (compliance.category = regulated): a motor magától nem módosít, csak mér, jelent és fékez.")
     elif not enabled:
         base["notes"].append("Nincs bekapcsolt (és nem „kézben lévő”) motor-kampány: nincs mit módosítani.")
     else:
@@ -413,6 +410,7 @@ def run_weekly(settings, project, store, client, run_id, *, llm=None, umami_clie
                                  "a kulcsszavakhoz és a hirdetésszövegekhez nem nyúlok.")
         else:
             actions += _optimize(project, store, client, brief, enabled, ids, kw_rows, status_rows, term_rows, web, web_ok, llm, today, hands)
+            actions += _creative(settings, project, store, client, base, brief, enabled, llm, openai, today, hands, fetch, fetch_kw, renew)
     _execute(settings, project, store, client, run_id, actions, enabled, today)
     base["actions"] = [action_dict(a) for a in actions if a.status in ("applied", "validated", "failed")]
     base["rejected"] = [action_dict(a) for a in actions if a.status == "rejected"]
@@ -420,7 +418,7 @@ def run_weekly(settings, project, store, client, run_id, *, llm=None, umami_clie
 
 
 def action_dict(a):
-    keep = ("text", "term", "clicks", "cost_micros", "visits", "removed", "added", "topics")
+    keep = ("text", "term", "clicks", "cost_micros", "visits", "removed", "added", "topics", "names", "sources")
     return {"kind": a.kind, "target": a.target, "reason": a.reason, "status": a.status, "because": a.rejected_because,
             "detail": {k: v for k, v in a.detail.items() if k in keep}}
 
@@ -468,6 +466,34 @@ def _optimize(project, store, client, brief, enabled, ids, kw_rows, status_rows,
     return actions
 
 
+def season_theme(brief, today):
+    """Az aktuális hónap témái a brief szezonalitásából (vagy a havi terv témája, ha van)."""
+    for m in brief.get("seasonality", []) or []:
+        if m.get("month") == today.month:
+            return ", ".join(m.get("themes", []))
+    return ""
+
+
+def _creative(settings, project, store, client, base, brief, enabled, llm, openai, today, hands, fetch, fetch_kw, renew):
+    """A kreatív-gyár heti lépése (képek): javaslatok az Ads Pack képeiből és az AI-ból; a feltöltést a _execute hajtja végre."""
+    slug = project.slug
+    try:
+        pk = packmod.load(project, store, fetch=fetch, **fetch_kw)
+    except packmod.PackError as e:
+        base["notes"].append(f"Képek: az Ads Pack nem használható ({'; '.join(e.problems[:2])}), ezért a képlépés kimarad.")
+        return []
+    theme = store.get(f"{slug}.plan.theme") or season_theme(brief, today)
+    out = factory.plan_week(settings=settings, project=project, store=store, client=client, brief=brief, pack=pk, llm=llm, openai=openai, campaigns=enabled,
+                            today=today, hands_off=hands, fetch=fetch, fetch_kw=fetch_kw, theme=theme, renew=renew)
+    base["creative"] = out.info
+    base["notes"] += out.notes
+    return out.actions
+
+
+def pause_campaign_asset_ops(resource_name):
+    return [{"campaignAssetOperation": {"update": {"resourceName": resource_name, "status": "PAUSED"}, "updateMask": "status"}}]
+
+
 def _execute(settings, project, store, client, run_id, actions, enabled, today):
     """Az elfogadott javaslatok végrehajtása: mindegyik külön atomi kérés (validateOnly + éles); az elutasítottak a naplóba kerülnek."""
     slug, cid = project.slug, project.customer_id
@@ -487,10 +513,23 @@ def _execute(settings, project, store, client, run_id, actions, enabled, today):
         try:
             if a.kind == "add_negative":
                 ex.apply(a.kind, neg_op(camp_rn.get(d.get("campaign_id"), first_rn), d["text"]), target=a.target, reason=a.reason, after={"negative": d["text"]})
+            elif a.kind == "add_keyword":
+                ex.apply(a.kind, add_keyword_ops(cid, d["ad_group_id"], d["text"], d["match"]), target=a.target, reason=a.reason, after={"keyword": d["text"], "match": d["match"]})
             elif a.kind == "pause_keyword":
                 ex.apply(a.kind, pause_keyword_ops(d["resource_name"]), target=a.target, reason=a.reason, before={"status": "ENABLED"}, after={"status": "PAUSED"})
             elif a.kind == "pause_ad":
                 ex.apply(a.kind, pause_ad_ops(d["old_rn"]), target=a.target, reason=a.reason, before={"status": "ENABLED"}, after={"status": "PAUSED"})
+            elif a.kind == "pause_image":
+                ex.apply(a.kind, pause_campaign_asset_ops(d["resource_name"]), target=a.target, reason=a.reason, before={"status": "ENABLED"}, after={"status": "PAUSED"})
+                if settings.live:
+                    factory.Registry(store, settings, project).set_status([d["asset_name"]], "paused")
+            elif a.kind == "add_images":
+                reg = factory.Registry(store, settings, project)
+                prepared = [p for p in (reg.prepared(n) for n in d["names"]) if p]
+                existing = launch.existing_image_assets(client, cid, [p.name for p in prepared])
+                ex.apply(a.kind, builder.build_image_ops(cid, d["campaign_rn"], prepared, existing), target=a.target, reason=a.reason, after={"images": d["names"]})
+                if settings.live:
+                    reg.set_status(d["names"], "uploaded")
             elif a.kind in ("rotate_rsa", "fix_disapproved"):
                 ag_rn = f"customers/{cid}/adGroups/{d['ad_group_id']}"
                 ex.apply(a.kind, rotate_rsa_ops(ag_rn, d["old_rn"], d["final_urls"], d["headlines"], d["descriptions"], d["path1"], d["path2"], d["pinned"]),

@@ -6,6 +6,7 @@ from . import log
 from .google.auth import ServiceAccount, TokenProvider
 from .google.client import GoogleAdsClient
 from .llm import LLM
+from .openai_images import OpenAIImages
 from .store import Store
 from .umami import Umami
 
@@ -31,6 +32,15 @@ def llm(settings, store=None):
     if not settings.anthropic_key:
         return None
     return LLM(settings.anthropic_key, settings.llm_model, base_url=settings.env.get("ANTHROPIC_BASE_URL") or None, store=store)
+
+
+def openai(settings):
+    """Az OpenAI-képkliens (gpt-image-2); None, ha nincs OPENAI_API_KEY: a motor ilyenkor új AI-képet nem kér."""
+    if not settings.openai_key:
+        return None
+    env = settings.env
+    return OpenAIImages(settings.openai_key, model=env.get("IMAGE_MODEL") or "gpt-image-2", quality=env.get("IMAGE_QUALITY") or "high",
+                        base_url=env.get("OPENAI_BASE_URL") or "https://api.openai.com")
 
 
 def umami(settings):

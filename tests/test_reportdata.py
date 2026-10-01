@@ -52,7 +52,8 @@ class GaqlFieldTests(unittest.TestCase):
                    "negatives": gaql.negatives(ids), "campaign_negatives": gaql.campaign_negatives(ids),
                    "terms": gaql.search_terms(ids, since, until), "ads": gaql.ads(ids, since, until), "labels": gaql.asset_labels(ids),
                    "changes": gaql.change_events("2026-09-01 00:00:00", "2026-10-01 00:00:00"), "ad_content": gaql.ad_content(ids),
-                   "keyword_status": gaql.keyword_status(ids), "disapproved": gaql.disapproved_details(ids)}
+                   "keyword_status": gaql.keyword_status(ids), "disapproved": gaql.disapproved_details(ids),
+                   "image_assets": gaql.image_assets(ids, since, until)}
         for name, q in queries.items():
             for f in self.fields_of(q):
                 self.assertTrue(self.exists(f), f"{name}: nincs ilyen mező a v25-ben: {f}")

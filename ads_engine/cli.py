@@ -10,6 +10,7 @@ Beállítás és indítás:
   tick                                  az esedékes feladatok egyszeri futtatása
   sync [--project pacsi]                napi szinkron és védelmek azonnal (kampány-fékek, brief-figyelő, nyitóoldal)
   weekly [--project pacsi] [--mail] [--no-ai] [--yes]   heti kiértékelés azonnal; élesben módosít (ehhez --yes kell)
+  monthly [--project pacsi] [--mail] [--yes]            a havi terv azonnal (élesben új kulcsszavakat ír, ehhez --yes kell)
   report [--project pacsi]              az utolsó heti jelentés kiírása
   confirm-budget --yes [--enable]       a Google Ads-ben látható keret elfogadása fék után; --enable: a szüneteltetett kampányok visszakapcsolása
   status [--project pacsi]              üzemmód, utolsó futások, jóváhagyott keret, zár, STOP
@@ -25,7 +26,7 @@ import os
 import socket
 import sys
 
-from . import __version__, checks, config, http, label, launch, log, pack as packmod, reports, review, runtime, scheduler, sync
+from . import __version__, checks, config, guardrails, http, label, launch, log, monthly, pack as packmod, reports, review, runtime, scheduler, sync
 from .google import discovery
 from .google.auth import AuthError
 from .google.client import GoogleAdsError
@@ -77,6 +78,10 @@ def cmd_status(args, settings):
         _out(f"Kézben lévő objektum (ember módosította, a motor nem nyúl hozzá): {len(hands)}")
     ls = store.get(f"{slug}.last_sync")
     _out(f"Utolsó napi szinkron: {ls['date'] if ls else 'még nem volt'}")
+    lm = store.get(f"{slug}.last_monthly")
+    _out(f"Utolsó havi terv: {lm['month'] + (' (levélben elment)' if lm.get('mailed') else ' (a levél NEM ment el)') if lm else 'még nem volt'}")
+    used = store.counter(slug, "ai_images", guardrails.iso_week(sync.now_in(project).date()))
+    _out(f"AI-képek ebben a hétben: {used} / {project.max_images_per_week}")
     lr = store.get(f"{slug}.last_report")
     _out(f"Utolsó heti jelentés: {lr['period_end'] + (' (levélben elment)' if lr.get('mailed') else ' (a levél NEM ment el)') if lr else 'még nem volt'}")
     runs = [r for r in store.runs(slug, limit=60) if r["kind"] != "guard"][:6]
@@ -149,7 +154,8 @@ def cmd_weekly(args, settings):
         run_id = store.start_run(project.slug, "weekly-manual", settings.mode)
         llm = None if args.no_ai else runtime.llm(settings, store)
         try:
-            res = review.run_weekly(settings, project, store, client, run_id, llm=llm, umami_client=runtime.umami(settings), now=sync.now_in(project),
+            res = review.run_weekly(settings, project, store, client, run_id, llm=llm, umami_client=runtime.umami(settings),
+                                    openai=None if args.no_ai else runtime.openai(settings), now=sync.now_in(project),
                                     **_fetch_kwargs(settings))
         except (GoogleAdsError, AuthError) as e:
             store.finish_run(run_id, "failed", {"error": str(e)})
@@ -166,6 +172,38 @@ def cmd_weekly(args, settings):
         _out(text)
         _out(f"(a jelentés elmentve: {out['path']})")
         if args.mail:
+            _out("A levél elment." if out["mailed"] else f"A levél NEM ment el: {out['mail_error']}")
+        return 0
+    return _locked(settings, run)
+
+
+def cmd_monthly(args, settings):
+    project = settings.project(args.project)
+    if settings.live and not args.yes:
+        _out("A havi terv ÉLES üzemmódban új kulcsszavakat ír a Google Ads-be (a szabályokon átengedettet, havonta legfeljebb tízet).")
+        _out("Megerősítéshez: python -m ads_engine monthly --yes   (ENGINE_MODE=dry mellett nincs írás, csak próba)")
+        return 1
+    client = _google_or_none(settings)
+    if client is None:
+        return 1
+
+    def run(store):
+        run_id = store.start_run(project.slug, "monthly-manual", settings.mode)
+        llm = runtime.llm(settings, store)
+        try:
+            report, _actions = monthly.run_monthly(settings, project, store, client, run_id, llm=llm, now=sync.now_in(project), **_fetch_kwargs(settings))
+        except (GoogleAdsError, AuthError) as e:
+            store.finish_run(run_id, "failed", {"error": str(e)})
+            _out(f"✗ {e}")
+            return 1
+        if report.get("skipped"):
+            store.finish_run(run_id, "ok", {"skipped": report["skipped"]})
+            _out("A havi terv nem készült el: " + " ".join(report["notes"]))
+            return 1
+        _out(reports.render_monthly_text(report))
+        store.finish_run(run_id, "ok", {"theme": report.get("theme"), "keywords_added": len(report["keywords"]["added"]), "path": report.get("path")})
+        if args.mail:
+            out = reports.deliver_monthly(settings, project, store, report)
             _out("A levél elment." if out["mailed"] else f"A levél NEM ment el: {out['mail_error']}")
         return 0
     return _locked(settings, run)
@@ -434,6 +472,10 @@ def build_parser():
     wk.add_argument("--mail", action="store_true", help="a jelentést el is küldi levélben")
     wk.add_argument("--no-ai", action="store_true", help="AI nélkül (keresési kifejezések elemzése és szövegcsere nélkül)")
     wk.add_argument("--yes", action="store_true")
+    mo = sub.add_parser("monthly", help="a havi terv azonnal (élesben új kulcsszavakat ír: --yes kell)")
+    mo.add_argument("--project")
+    mo.add_argument("--mail", action="store_true", help="a tervet el is küldi levélben")
+    mo.add_argument("--yes", action="store_true")
     rp = sub.add_parser("report", help="az utolsó heti jelentés kiírása")
     rp.add_argument("--project")
     cb = sub.add_parser("confirm-budget", help="a Google Ads-ben látható keret elfogadása fék után")
@@ -449,7 +491,7 @@ def build_parser():
 
 
 COMMANDS = {"check": cmd_check, "status": cmd_status, "api-check": cmd_api_check, "plan": cmd_plan, "launch": cmd_launch,
-            "go-live": cmd_go_live, "sync": cmd_sync, "weekly": cmd_weekly, "report": cmd_report, "confirm-budget": cmd_confirm_budget,
+            "go-live": cmd_go_live, "sync": cmd_sync, "weekly": cmd_weekly, "monthly": cmd_monthly, "report": cmd_report, "confirm-budget": cmd_confirm_budget,
             "tick": cmd_tick, "serve": cmd_serve, "healthcheck": cmd_healthcheck, "stop": cmd_stop, "resume": cmd_resume}
 
 

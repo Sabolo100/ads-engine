@@ -2,7 +2,7 @@
 
 Önjáró Google Ads kezelő több projekthez (Pacsi – pacsit.hu; később kinaiauto.com, darwinai.hu, polibeli.hu). A szerveren fut (Coolify, Docker), a laptop nélkül: hirdetést épít, hetente kiértékeli (Google Ads + Umami), és a **kódban lévő korlátok** között módosít, majd magyar levélben beszámol. **A keretet és a kampányok be/kikapcsolását te kezeled a Google Ads felületén.**
 
-Állapot: **0.3.0** – Search-kampány építése, napi védelmek, heti kiértékelés és jelentés, ütemező, Docker. A pontos változások: `CHANGELOG.md`.
+Állapot: **0.4.0** – Search-kampány építése, napi védelmek, heti kiértékelés és jelentés, **kreatív-gyár** (új képek, AI-kulcsvizuálok keretezve és ellenőrizve), **havi terv**, ütemező, Docker. A pontos változások: `CHANGELOG.md`.
 
 ## Hogyan működik
 
@@ -38,7 +38,7 @@ python -m ads_engine plan                       az Ads Pack letöltése és elle
 python -m ads_engine launch --yes               szüneteltetett kampány létrehozása (dry: csak próba)
 python -m ads_engine go-live --weekly-budget N --yes   a keret beállítása és a kampány bekapcsolása
 python -m ads_engine serve                      a szolgáltatás: ütemező + /healthz (ez a Docker-konténer fő parancsa)
-python -m ads_engine status | sync | weekly | report | confirm-budget | stop | resume | tick | healthcheck | api-check
+python -m ads_engine status | sync | weekly | monthly | report | confirm-budget | stop | resume | tick | healthcheck | api-check
 ```
 
 A teljes parancslista és a használat: `docs/MUKODES.md`. Üzemmód: `ENGINE_MODE=dry` (alap) | `live`; a biztonsági fékek (kampány szüneteltetése) `dry` módban is élesek, mert csak csökkenthetnek költést.
@@ -56,7 +56,7 @@ A `/data` tartós kötet kell (SQLite állapot, jelentések, gyorsítótár). A 
 
 ```
 pip install -r requirements.txt
-python -m unittest discover -s tests          # ~370 próba álszerverekkel (Google OAuth + Ads REST, Anthropic, Umami, SMTP, oldal)
+python -m unittest discover -s tests          # ~450 próba álszerverekkel (Google OAuth + Ads REST, Anthropic, OpenAI, Umami, SMTP, oldal)
 ```
 
 A próbák a valódi szolgáltatásokhoz nem érnek. A Google kéréseit a hivatalos REST-leíró dokumentum (v25) ellen ellenőrzik (`.cache/googleads_v25.json`, az `api-check` tölti le). Az önálló bekötési validátor újragenerálása: `python tools/build_validator.py`.

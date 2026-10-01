@@ -75,8 +75,8 @@ Séma: `schema/ads-brief.schema.json`. Kötelező: `schema_version`, `project`, 
 | `tracking.visit_event`, `tracking.engaged_events[]`, `tracking.key_events[]` | nem | melyik esemény tüzel látogatásonként egyszer (alap: `inditas`) / jelent „bevont látogatást” (alap: `bevont`) / kulcscselekvést (5. pont) |
 | `ads.max_cpc` | nem | kattintásonkénti plafon a fiók pénznemében |
 | `ads.business_name` | nem | cégnév a hirdetésekben (≤ 25) |
-| `brand` | nem | `colors`, `fonts`, `logo`, `image_style_prompt`, `reference_images[]`: az AI-képgeneráláshoz |
-| `seasonality[]` | nem | `{month, themes[]}`: havi témák |
+| `brand` | nem | `colors`, `fonts`, `logo`, `image_style_prompt`, `reference_images[]`: az AI-képgeneráláshoz. A motor ma az `image_style_prompt`-ot használja (az új AI-kulcsvizuálok promptjának eleje: legyen benne, hogy **nincs szöveg, logó, felirat** a képen, és hogy a fő téma a kép középső 80 %-ában van); a többi mező a későbbi (Demand Gen) kiadásé |
+| `seasonality[]` | nem | `{month, themes[]}`: a havi terv ebből indul ki (a hónap és a következő hónap témái) |
 | `creatives_url` | nem | a kész hirdetések (`creatives.json`) helye, relatív vagy abszolút |
 
 ### A `facts` – a rendszer gerince
@@ -124,7 +124,7 @@ Egy téma / keresési szándék = egy csoport. Mezők:
 |---|---|
 | `sitelinks[]` (≤ 8) | `{text ≤ 25, description1 ≤ 35, description2 ≤ 35, landing}` |
 | `callouts[]` (≤ 10) | ≤ 25 karakter, felkiáltójel nélkül (pl. „Ingyenes”, „Regisztráció nélkül”) |
-| `images[]` | `{id, file, ratio, alt}`: JPEG vagy PNG, ≤ 5 MB. **Arány:** `1.91:1` (ajánlott 1200×628, min. 600×314), `1:1` (1200×1200, min. 300×300), `4:5` (960×1200, min. 480×600), ±1 % tűréssel. Ha az arány nem pontos, a motor a Google méreteire vágja/kitölti. `alt`: mit ábrázol a kép (akadálymentesség). A kép ne tartalmazzon sok szöveget, és ne legyen rajta csalogató/félrevezető felirat |
+| `images[]` | `{id, file, ratio, alt}`: JPEG vagy PNG, ≤ 5 MB. **Arány:** `1.91:1` (ajánlott 1200×628, min. 600×314), `1:1` (1200×1200, min. 300×300), `4:5` (960×1200, min. 480×600), ±1 % tűréssel. Ha az arány nem pontos, a motor a Google méreteire vágja (legfeljebb ~30 % vágással); egyöntetű hátterű képet (pl. krém háttér) a háttér színével kitölti; **elmosott kitöltést nem használ** (a Google tiltja), egyéb képnél hibát jelez. `alt`: mit ábrázol a kép (akadálymentesség). ⚠ **A Search kép-eszközön a Google tiltja a szöveget, feliratot és logót a képen, az utólag készített kollázst/keretet és az elmosott képet** – a képek tiszta, éles, szövegmentes fotók vagy illusztrációk legyenek. A fióknak legalább 60 naposnak kell lennie (a motor addig képek nélkül futtatja a kampányt, és később pótolja őket) |
 | `logos[]` | `{id, file}`: 1:1, min. 128×128 |
 | `videos[]` | `{youtube_id, orientation, title}`: nyilvános vagy nem listázott YouTube-videó; függőleges (9:16) ajánlott. Egyelőre a Demand Gen kampányhoz (későbbi kiadás) |
 

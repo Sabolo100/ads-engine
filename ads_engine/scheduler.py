@@ -14,7 +14,7 @@ import threading
 import time
 from zoneinfo import ZoneInfo
 
-from . import alerts, http, log, mailer, net, reports, review, runtime, sync, web
+from . import alerts, guardrails as g, http, log, mailer, monthly, net, reports, review, runtime, sync, web
 from .google import discovery
 from .store import LeaseBusy
 
@@ -24,7 +24,8 @@ RETRY_AFTER = dt.timedelta(minutes=30)
 MAX_ATTEMPTS = 3
 LEASE_TTL = 1800
 APICHECK_AT = dt.time(6, 0)             # havonta egyszer, a hónap első ticken
-LABEL = {"sync": "napi szinkron", "weekly": "heti kiértékelés", "guard": "nyitóoldal-őr", "apicheck": "havi API-ellenőrzés"}
+MONTHLY_AT = dt.time(7, 30)             # a havi terv: a hónap első napján 07:30 után (a napi szinkron után), pótolható a hónap végéig
+LABEL = {"sync": "napi szinkron", "weekly": "heti kiértékelés", "guard": "nyitóoldal-őr", "apicheck": "havi API-ellenőrzés", "monthly": "havi terv"}
 
 
 @dataclasses.dataclass
@@ -33,6 +34,8 @@ class Deps:
     client: object = None
     llm: object = None
     umami: object = None
+    openai: object = None
+    renew: object = None             # a zár megújítása hosszú lépések (AI-képek) közben; a tick állítja be
     fetch: object = net.fetch
     fetch_kw: dict = dataclasses.field(default_factory=dict)
     send: object = None              # mailer.send felülírása
@@ -40,12 +43,11 @@ class Deps:
 
 
 def default_deps(settings, store):
-    return Deps(client=runtime.google_client(settings), llm=runtime.llm(settings, store), umami=runtime.umami(settings), fetch_kw=runtime.fetch_kwargs(settings))
+    return Deps(client=runtime.google_client(settings), llm=runtime.llm(settings, store), umami=runtime.umami(settings), openai=runtime.openai(settings),
+                fetch_kw=runtime.fetch_kwargs(settings))
 
 
-def iso_week(d):
-    y, w, _ = d.isocalendar()
-    return f"{y}-W{w:02d}"
+iso_week = g.iso_week
 
 
 def local_now(project):
@@ -86,6 +88,8 @@ def due(project, store, now):
     month = today.strftime("%Y-%m")
     if now.time() >= APICHECK_AT and pending("apicheck", month):
         out.append(("apicheck", month))
+    if now.time() >= MONTHLY_AT and pending("monthly", month) and (sync_ok or ("sync", sync_period) in out):
+        out.append(("monthly", month))
     return out
 
 
@@ -121,7 +125,8 @@ def job_weekly(settings, store, project, run_id, now, deps):
         report, narrative = reports.load_saved(pending["path"])
         summary = {"resent": True}
     else:
-        res = review.run_weekly(settings, project, store, deps.client, run_id, llm=deps.llm, umami_client=deps.umami, now=now, fetch=deps.fetch, **deps.fetch_kw)
+        res = review.run_weekly(settings, project, store, deps.client, run_id, llm=deps.llm, umami_client=deps.umami, openai=deps.openai, renew=deps.renew, now=now,
+                                fetch=deps.fetch, **deps.fetch_kw)
         if res.skipped == "no_campaigns":
             return {"skipped": "no_campaigns"}
         report = res.report
@@ -134,6 +139,17 @@ def job_weekly(settings, store, project, run_id, now, deps):
     store.delete(f"{slug}.pending_report")
     store.put(f"{slug}.notices", [])                                      # a jelentésben megjelentek: nem ismétlődnek
     return {**summary, "report": out["path"], "mailed": True}
+
+
+def job_monthly(settings, store, project, run_id, now, deps):
+    """A havi terv: téma, kulcsszó-bővítés (szabályokon át), hirdetési szempontok, kísérletek, tanulságok → levél."""
+    report, _actions = monthly.run_monthly(settings, project, store, deps.client, run_id, llm=deps.llm, now=now, fetch=deps.fetch, **deps.fetch_kw)
+    if report.get("skipped"):
+        return {"skipped": report["skipped"]}
+    out = reports.deliver_monthly(settings, project, store, report, send=deps.send or mailer.send)
+    if not out["mailed"]:
+        raise RuntimeError(f"a havi terv elkészült, de a levél nem ment el: {out['mail_error']}")
+    return {"theme": report.get("theme"), "keywords_added": len(report["keywords"]["added"]), "rejected": len(report["keywords"]["rejected"]), "mailed": True}
 
 
 def job_guard(settings, store, project, run_id, now, deps):
@@ -152,7 +168,7 @@ def job_apicheck(settings, store, project, run_id, now, deps):
     return {"ok": res["ok"], "notes": res["notes"]}
 
 
-JOBS = {"sync": job_sync, "weekly": job_weekly, "guard": job_guard, "apicheck": job_apicheck}
+JOBS = {"sync": job_sync, "weekly": job_weekly, "guard": job_guard, "apicheck": job_apicheck, "monthly": job_monthly}
 
 
 def run_job(settings, store, project, kind, period, now, deps):
@@ -194,10 +210,11 @@ def tick(settings, store, *, now=None, deps=None, owner=None):
             if deps.client is None:
                 log.warn("tick.no_google_key", project=project.slug)
                 continue
+            deps = dataclasses.replace(deps, renew=lambda: store.acquire("engine", owner, LEASE_TTL))
             for kind, period in jobs:
                 store.acquire("engine", owner, LEASE_TTL)           # a zár megújítása hosszú feladatok között
-                if kind == "weekly" and (store.job(project.slug, "sync", n.date().isoformat()) or {}).get("status") != "ok":
-                    log.warn("tick.weekly_waits_for_sync", project=project.slug)   # védelmek nélkül nem módosítunk: előbb a napi szinkron kell
+                if kind in ("weekly", "monthly") and (store.job(project.slug, "sync", n.date().isoformat()) or {}).get("status") != "ok":
+                    log.warn("tick.waits_for_sync", project=project.slug, job=kind)   # védelmek nélkül nem módosítunk: előbb a napi szinkron kell
                     continue
                 done.append(run_job(settings, store, project, kind, period, n, deps))
     return done

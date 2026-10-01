@@ -27,6 +27,8 @@ KW_CORE = "kutyafajta választó"                    # a brief védi
 
 
 class ReviewBase(unittest.TestCase):
+    REJECT_IMAGES_AT_LAUNCH = False              # igaz: az indításkor a kép-bővítmény „nem engedélyezett” (új fiók), később már igen
+
     def setUp(self):
         self.e = Env(mode="live")
         self.e.store.clock = lambda: NOW.timestamp()                  # a naplóbejegyzések ideje a „mai nap”: a heti korlátok ellenőrizhetők
@@ -41,8 +43,15 @@ class ReviewBase(unittest.TestCase):
         self.terms_answer = {"judgements": [], "summary": ""}
         self.copy_answer = {"headlines": [], "descriptions": [], "rationale": ""}
         self.narrative_answer = {"headline": "Nyugodt hét volt, a motor figyelt.", "paragraphs": ["A forgalom egyenletes maradt."], "next_steps": []}
+        self.monthly_answer = {"theme": "Őszi séták a kutyával", "rationale": "Az ősz a séták időszaka: a kutyaválasztók ilyenkor tervezik a közös programokat.",
+                               "keyword_ideas": [], "ad_angles": ["Őszi séta hangulata, meleg tónusok", "Egy perc alatt kiderül, melyik fajta illik hozzád"],
+                               "experiments": ["Külön hirdetéscsoport a Halloween-témára november előtt"], "learnings": ["A kvíz-csoport hozza a legtöbb bevont látogatót."]}
+        self.concepts_answer = {"concepts": []}
+        self.qa_answer = {"usable": True, "score": 5, "visible_text": "", "issues": []}
         self.anth.responder = self.route
+        self.e.mock.reject_images = self.REJECT_IMAGES_AT_LAUNCH
         launch.launch(self.e.settings, self.e.project, self.e.store, self.e.client, 1, **self.e.kw)
+        self.e.mock.reject_images = False
         launch.go_live(self.e.settings, self.e.project, self.e.store, self.e.client, 2, 14_000, today=LIVE_SINCE)
         self.camp_rn = next(iter(self.state("campaign")))
         self.cid_ = self.camp_rn.rsplit("/", 1)[-1]
@@ -56,12 +65,10 @@ class ReviewBase(unittest.TestCase):
     # ------------------------------------------------------------------ álszerverek és adatok
     def route(self, body):
         system = body["system"]
-        if "keresésikifejezés-elemző" in system:
-            return json.dumps(self.terms_answer, ensure_ascii=False)
-        if "szövegíró" in system:
-            return json.dumps(self.copy_answer, ensure_ascii=False)
-        if "heti elemzője" in system:
-            return json.dumps(self.narrative_answer, ensure_ascii=False)
+        for marker, answer in (("havi stratégája", "monthly_answer"), ("művészeti vezetője", "concepts_answer"), ("képeinek ellenőrzője", "qa_answer"),
+                               ("heti elemzője", "narrative_answer"), ("keresésikifejezés-elemző", "terms_answer"), ("szövegíró", "copy_answer")):
+            if marker in system:                                    # a konkrétabb szerepek előbb: pl. a havi terv promptja a „szövegírónak” szót is tartalmazza
+                return json.dumps(getattr(self, answer), ensure_ascii=False)
         raise AssertionError("ismeretlen AI-kérés: " + system[:60])
 
     def state(self, typ):
@@ -266,8 +273,8 @@ class NegativeTests(ReviewBase):
                    ("kutya ház építés házilag otthon", "irrelevant", "kutya ház építés házilag otthon"))
         before = self.negatives()
         res = self.weekly()
-        self.assertEqual(self.actions(res, "add_negative"), [a for a in res.actions if a.status == "rejected"])
-        why = {a.detail["term"]: " | ".join(a.rejected_because) for a in res.actions}
+        self.assertEqual(self.actions(res, "add_negative"), [a for a in res.actions if a.kind == "add_negative" and a.status == "rejected"])
+        why = {a.detail["term"]: " | ".join(a.rejected_because) for a in self.actions(res, "add_negative")}
         self.assertIn("releváns keresési kifejezést", why["ingyen kutyaház"])
         self.assertIn("kizárná", why["kutyafajta olcsó"])
         self.assertIn("nem szerepel a megfigyelt keresési kifejezésben", why["valami más"])

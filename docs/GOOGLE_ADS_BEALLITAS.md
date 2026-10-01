@@ -75,7 +75,7 @@ Coolify → az **Ads Engine** alkalmazás → **Environment Variables** (futási
 | `GADS_SA_JSON_B64` | a JSON-kulcsfájl **base64-ben** (lásd lent) | **igen** |
 | `GADS_LOGIN_CUSTOMER_ID` | az MCC azonosítója, kötőjel nélkül | nem |
 | `ANTHROPIC_API_KEY` | Anthropic API-kulcs (<https://console.anthropic.com/> → API keys; érdemes havi költési limitet állítani) | **igen** |
-| `OPENAI_API_KEY` | csak a képgeneráláshoz (a következő verziótól); egyelőre elhagyható | **igen** |
+| `OPENAI_API_KEY` | az új AI-képekhez (gpt-image-2; hetente legfeljebb 10 kép, kemény korlát). A Search kép-bővítményhez a Google legalább 60 napos fiókot kér, ezért az első hetekben nem használja; elhagyható, és később is pótolható. Az OpenAI-fiókban érdemes havi költési limitet állítani | **igen** |
 | `UMAMI_URL` | `https://stat.pacsit.hu` | nem |
 | `UMAMI_USER` / `UMAMI_PASSWORD` | az 5. lépés felhasználója | a jelszó **igen** |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | a `hello@pacsit.hu` meglévő SMTP-beállítása | a jelszó **igen** |
@@ -119,3 +119,4 @@ Minden sor `✓` (rendben), `!` (figyelmeztetés), `→` (a te lépésed hiányz
 1. Én lefuttatom: `check` → `plan` (a kampányfa összegzése, a Google-be nem ír) → `launch` (dry: csak próba) → éles, **szüneteltetett** kampány – ezt megnézheted a Google Ads-ben, **semmi nem fut és nem kerül pénzbe**.
 2. Megkérdezem a **heti keretet** (a Google Ads-ben utólag is bármikor szerkesztheted).
 3. A `go-live` a te jóváhagyásodra kapcsolja be a kampányt; utána 14 napig csak megfigyel, majd a heti kör módosít. A részleteket a `docs/MUKODES.md` írja le.
+4. **Képek:** új fiókon a Google a Search kép-bővítményt (a hirdetés melletti képet) csak **60 nap** után engedi (jó szabályzati előzmény, aktív szöveges hirdetés és költés kell). A kampány addig képek nélkül fut – ez nem hiba –, és a motor magától pótolja őket, amint a Google engedi. Szöveg és logó a képen nem megengedett.

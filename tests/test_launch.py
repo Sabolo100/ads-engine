@@ -72,6 +72,50 @@ class Env:
         return code, buf.getvalue()
 
 
+class ImageEligibilityTests(unittest.TestCase):
+    """Új fiókon a Google a Search kép-bővítményt még nem engedi (legalább 60 napos fiók kell): a kampány ettől még létrejön."""
+
+    def setUp(self):
+        self.e = Env()
+
+    def tearDown(self):
+        self.e.close()
+
+    def test_dry_launch_validates_the_tree_without_images_and_warns(self):
+        self.e.mock.reject_images = True
+        res = launch.launch(self.e.settings, self.e.project, self.e.store, self.e.client, 1, **self.e.kw)
+        self.assertEqual(res["status"], "validated")
+        self.assertTrue(any("60 napos fiókot" in w for w in res["warnings"]))
+        logs = self.e.store.actions(kind="launch")
+        self.assertEqual(sorted(a["status"] for a in logs), ["rejected", "validated"])        # az első (képekkel) elbukott, a második (képek nélkül) rendben
+
+    def test_dry_launch_still_fails_when_a_non_image_operation_is_wrong(self):
+        self.e.mock.fail_next(400, "campaignError.CAMPAIGN_BUDGET_REQUIRED", "hibás", n=1, path="googleAds:mutate")
+        with self.assertRaises(GoogleAdsError):
+            launch.launch(self.e.settings, self.e.project, self.e.store, self.e.client, 1, **self.e.kw)
+
+    def test_live_launch_creates_the_campaign_without_images_and_warns(self):
+        self.e.with_mode("live")
+        self.e.mock.reject_images = True
+        res = launch.launch(self.e.settings, self.e.project, self.e.store, self.e.client, 1, **self.e.kw)
+        self.assertEqual((res["status"], res["images_added"]), ("created", 0))
+        self.assertTrue(any("heti kör később pótolja" in w and "60 napos fiókot" in w for w in res["warnings"]))
+        self.assertEqual(len(self.e.mock.state[CID]["campaign"]), 1)
+        self.assertEqual([c for c in self.e.mock.state[CID].get("campaignAsset", {}).values() if c["fieldType"] == "AD_IMAGE"], [])
+
+    def test_live_launch_registers_the_pack_images_as_protected(self):
+        from ads_engine import factory
+        self.e.with_mode("live")
+        res = launch.launch(self.e.settings, self.e.project, self.e.store, self.e.client, 1, **self.e.kw)
+        self.assertEqual(res["images_added"], 3)
+        entries = factory.Registry(self.e.store, self.e.settings, self.e.project).entries()
+        self.assertEqual([(e["source"], e["status"]) for e in entries], [("pack", "uploaded")] * 3)
+
+    def test_error_indexes_parse_the_google_paths(self):
+        e = GoogleAdsError(400, [{"code": "x.y", "path": "mutate_operations[107].asset_operation.create"}, {"code": "x.z", "path": "mutate_operations[3]"}, {"code": "q"}])
+        self.assertEqual(launch.error_indexes(e), {107, 3})
+
+
 class BuilderTests(unittest.TestCase):
     def setUp(self):
         self.e = Env()

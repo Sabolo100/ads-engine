@@ -2,13 +2,13 @@
 
 Méretek (a Google szerint): fekvő 1,91:1 (ajánlott 1200×628, min. 600×314) · négyzetes 1:1 (1200×1200, min. 300×300) ·
 álló 4:5 (960×1200, min. 480×600) · logó 1:1 (min. 128×128). Az arány-tűrés ±1 %, a fájl legfeljebb 5 MB (JPEG vagy PNG).
-Az M4 mérföldkőben ide kerül az AI-képgenerálás (gpt-image-2, hetente ≤ 10) és a szöveges átfedés is.
+Az új képek (vágásváltozatok, AI-kulcsvizuálok) a factory.py-ban készülnek; szöveget és logót a képre NEM teszünk (a Google a Search kép-eszközön tiltja).
 """
 import dataclasses
 import hashlib
 import io
 
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageOps
 
 SPECS = {
     "landscape": {"ratio": 1.91, "size": (1200, 628), "min": (600, 314), "label": "1,91:1"},
@@ -71,7 +71,7 @@ def _edge_color(im):
     strip = max(2, min(w, h) // 50)
     pixels = []
     for box in ((0, 0, w, strip), (0, h - strip, w, h), (0, 0, strip, h), (w - strip, 0, w, h)):
-        raw = im.convert("RGB").crop(box).resize((24, 24)).tobytes()
+        raw = im.convert("RGB").crop(box).resize((24, 24), Image.NEAREST).tobytes()          # mintavételezés (nem átlagolás): a textúra ne tűnjön egyöntetűnek
         pixels += [tuple(raw[i:i + 3]) for i in range(0, len(raw), 3)]
     channels = list(zip(*pixels))
     means = tuple(int(sum(c) / len(c)) for c in channels)
@@ -80,10 +80,14 @@ def _edge_color(im):
 
 
 def _pad(im, size):
-    """Kitöltés: egyöntetű szélű képnél (krém háttér) a szél színe, különben a kép elmosott változata; semmi nem vágódik le."""
-    fg = ImageOps.contain(im, size, Image.LANCZOS)
+    """Kitöltés CSAK egyöntetű szélű képnél (pl. krém háttér): a szél színe; semmi nem vágódik le. Elmosott háttér nincs: a Google a Search
+    kép-eszközön tiltja az elmosott, életlen képet – egyéb képnél hibát jelzünk, és a kívánt arányú forrást kérjük."""
     edge = _edge_color(im)
-    bg = Image.new("RGB", size, edge) if edge else _cover(im, size).filter(ImageFilter.GaussianBlur(radius=max(size) / 40))
+    if not edge:
+        raise ImageError("a kép aránya nem illik a Google méreteihez, és vágás nélkül csak elmosott kitöltéssel férne el, amit a Google a Search kép-eszközön tilt: "
+                         "adj meg a kívánt (1,91:1, 1:1 vagy 4:5) arányú képet")
+    fg = ImageOps.contain(im, size, Image.LANCZOS)
+    bg = Image.new("RGB", size, edge)
     bg.paste(fg, ((size[0] - fg.width) // 2, (size[1] - fg.height) // 2))
     return bg
 

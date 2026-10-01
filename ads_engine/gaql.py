@@ -88,3 +88,10 @@ def ad_content(ids):
             "ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, "
             "ad_group_ad.ad.responsive_search_ad.path1, ad_group_ad.ad.responsive_search_ad.path2 FROM ad_group_ad "
             f"WHERE campaign.id IN {ids_in(ids)} AND ad_group_ad.status != 'REMOVED'")
+
+
+def image_assets(ids, since, until):
+    """A kampányokhoz kötött kép-eszközök (Search kép-bővítmények) állapota és teljesítménye a megadott időszakban."""
+    return ("SELECT campaign.id, campaign_asset.resource_name, campaign_asset.status, campaign_asset.field_type, asset.id, asset.name, "
+            "metrics.impressions, metrics.clicks FROM campaign_asset "
+            f"WHERE campaign.id IN {ids_in(ids)} AND campaign_asset.field_type = 'AD_IMAGE' AND campaign_asset.status != 'REMOVED' AND {between(since, until)}")

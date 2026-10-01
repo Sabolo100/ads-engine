@@ -17,7 +17,8 @@ from . import llm as llmmod, log, mailer, version
 from .guardrails import MICROS
 
 KIND_LABEL = {"add_negative": "Új negatív kulcsszó", "pause_keyword": "Kulcsszó szüneteltetve", "rotate_rsa": "Hirdetésszöveg-csere",
-              "fix_disapproved": "Elutasított hirdetés javítva", "pause_ad": "Hirdetés szüneteltetve"}
+              "fix_disapproved": "Elutasított hirdetés javítva", "pause_ad": "Hirdetés szüneteltetve", "add_keyword": "Új kulcsszó",
+              "add_images": "Új képek feltöltve", "pause_image": "Kép szüneteltetve"}
 STATUS_LABEL = {"applied": "kész", "validated": "próba: a Google elfogadta, de nem írtam", "failed": "NEM sikerült"}
 MAX_REJECTED_SHOWN = 8
 
@@ -122,6 +123,13 @@ def make_narrative(llm, slug, report):
 
 
 # ------------------------------------------------------------------ szöveges levél
+def creative_line(cr):
+    """A képlépés heti összegzése egy sorban (a kampányban lévő képek, új vágásváltozatok, AI-képek, keret)."""
+    return (f"a kampányban {cr.get('live_images', 0)} kép · ezen a héten {cr.get('crops', 0)} új vágásváltozat, {cr.get('ai_generated', 0)} AI-kép "
+            f"({cr.get('approved', 0)} elfogadva, {cr.get('rejected', 0)} elutasítva) · feltöltve: {cr.get('uploaded', 0)} · AI-képkeret: "
+            f"{cr.get('ai_used_week', 0)}/{cr.get('ai_cap', 0)}")
+
+
 def _action_line(a, cur):
     label = KIND_LABEL.get(a["kind"], a["kind"])
     st = STATUS_LABEL.get(a["status"], a["status"])
@@ -173,6 +181,8 @@ def render_text(r, narrative=None):
         L += ["", "A TE TEENDŐD"] + [f"  → {t}" for t in r["todo"]]
     L += ["", "MIT CSINÁLTAM A HÉTEN"]
     L += [f"  • {_action_line(a, cur)}" for a in r["actions"]] if r["actions"] else ["  Nem volt módosítás."]
+    if r.get("creative"):
+        L += ["", "KÉPEK", f"  {creative_line(r['creative'])}"]
     if r["rejected"]:
         L += ["", "AMIT JAVASOLTAM, DE A SZABÁLYOK NEM ENGEDTEK (nem hajtottam végre)"]
         for a in r["rejected"][:MAX_REJECTED_SHOWN]:
@@ -272,6 +282,8 @@ def render_html(r, narrative=None):
         parts.append("<ul style='font-size:13px;line-height:1.45;margin:0 0 0 18px;padding:0'>" + "".join(items) + "</ul>")
     else:
         parts.append(f"<p style='font-size:13px;color:{MUTED};margin:0'>Nem volt módosítás.</p>")
+    if r.get("creative"):
+        parts.append(_h2("Képek") + f"<p style='font-size:13px;line-height:1.45;margin:0'>{_e(creative_line(r['creative']))}</p>")
     if r["rejected"]:
         parts.append(_h2("Amit javasoltam, de a szabályok nem engedtek"))
         items = [f"<li style='margin:3px 0'>{_e(KIND_LABEL.get(a['kind'], a['kind']))}: {_e(a['target'])} – <span style='color:{MUTED}'>{_e(a['because'][0] if a['because'] else a['reason'])}</span></li>"
@@ -340,4 +352,93 @@ def deliver(settings, project, store, report, narrative=None, *, send=mailer.sen
         out["mail_error"] = str(e)
         log.warn("report.mail_failed", error=str(e))
     store.put(f"{project.slug}.last_report", {"period_end": report["period"]["end"], "path": str(path), "mailed": out["mailed"]})
+    return out
+
+
+# ------------------------------------------------------------------ havi terv levele
+MONTHS = ["január", "február", "március", "április", "május", "június", "július", "augusztus", "szeptember", "október", "november", "december"]
+
+
+def month_label(month):
+    y, m = month.split("-")
+    return f"{y}. {MONTHS[int(m) - 1]}"
+
+
+def monthly_subject(m):
+    prefix = "" if m["mode"] == "live" else "[PRÓBA] "
+    return f"{prefix}[{m['name']}] Havi terv · {month_label(m['month'])} · téma: {m.get('theme', '–')}"
+
+
+def _kw_status(k):
+    return "kész" if k["status"] == "applied" else "próba: a Google elfogadta, de nem írtam"
+
+
+def render_monthly_text(m):
+    title = f"{m['name']} – havi terv ({month_label(m['month'])})"
+    L = [title, "=" * len(title)]
+    if m["mode"] != "live":
+        L += ["", "PRÓBAÜZEM (dry): ebben az üzemmódban a motor semmit nem módosít a Google Ads-ben, a módosításokat csak ellenőrzi."]
+    L += ["", "A HÓNAP TÉMÁJA", f"  {m.get('theme', '–')}"] + ([f"  {m['rationale']}"] if m.get("rationale") else [])
+    kw = m.get("keywords", {})
+    L += ["", "ÚJ KULCSSZAVAK"]
+    L += [f"  • {k['text']} → {k['ad_group']} [{_kw_status(k)}]" for k in kw.get("added", [])] or ["  Ebben a hónapban nem íródott új kulcsszó."]
+    for k in kw.get("failed", []):
+        L.append(f"  • {k['text']}: NEM sikerült ({k['because'][0] if k['because'] else '?'})")
+    if kw.get("rejected"):
+        L += ["", "AMIT JAVASOLTAM, DE A SZABÁLYOK NEM ENGEDTEK (nem hajtottam végre)"]
+        L += [f"  • {k['text']} – {k['because'][0] if k['because'] else ''}" for k in kw["rejected"][:MAX_REJECTED_SHOWN]]
+    for heading, key in (("HIRDETÉSI SZEMPONTOK (a szövegíró ezeket használja a következő cseréknél)", "ad_angles"),
+                         ("KÍSÉRLETEK (ezekről te döntesz; a motor nem hajtja végre)", "experiments"), ("MIT TANULTUNK", "learnings")):
+        if m.get(key):
+            L += ["", heading] + [f"  • {x}" for x in m[key]]
+    if m.get("notes"):
+        L += ["", "JEGYZETEK"] + [f"  • {n}" for n in m["notes"]]
+    L += ["", "—", f"Ads Engine {version.label()} · üzemmód: {m['mode']} · {m['generated']}"]
+    return "\n".join(L) + "\n"
+
+
+def _ul(items, size=13):
+    return f"<ul style='font-size:{size}px;line-height:1.45;margin:0 0 0 18px;padding:0'>" + "".join(items) + "</ul>"
+
+
+def render_monthly_html(m):
+    kw = m.get("keywords", {})
+    parts = [f'<h1 style="margin:0 0 4px;font-size:20px;color:{INK}">{_e(m["name"])} – havi terv</h1><div style="color:{MUTED};font-size:13px">{_e(month_label(m["month"]))}</div>']
+    if m["mode"] != "live":
+        parts.append(_box("<b>Próbaüzem (dry).</b> Ebben az üzemmódban a motor semmit nem módosít a Google Ads-ben; a módosításokat csak ellenőrzi.", "#eff6ff", ACCENT))
+    parts.append(_h2("A hónap témája") + f'<p style="font-size:16px;line-height:1.45;margin:0 0 6px"><b>{_e(m.get("theme", "–"))}</b></p>' +
+                 (f'<p style="font-size:14px;line-height:1.5;margin:0">{_e(m["rationale"])}</p>' if m.get("rationale") else ""))
+    items = [f"<li style='margin:4px 0'><b>{_e(k['text'])}</b> → {_e(k['ad_group'])} <span style='color:{MUTED}'>[{_e(_kw_status(k))}]</span></li>" for k in kw.get("added", [])]
+    items += [f"<li style='margin:4px 0'>{_e(k['text'])}: <span style='color:#b91c1c'>NEM sikerült ({_e(k['because'][0] if k['because'] else '?')})</span></li>" for k in kw.get("failed", [])]
+    parts.append(_h2("Új kulcsszavak") + (_ul(items) if items else f"<p style='font-size:13px;color:{MUTED};margin:0'>Ebben a hónapban nem íródott új kulcsszó.</p>"))
+    if kw.get("rejected"):
+        rej = [f"<li style='margin:3px 0'>{_e(k['text'])} – <span style='color:{MUTED}'>{_e(k['because'][0] if k['because'] else '')}</span></li>" for k in kw["rejected"][:MAX_REJECTED_SHOWN]]
+        parts.append(_h2("Amit javasoltam, de a szabályok nem engedtek") + _ul(rej))
+    for heading, key in (("Hirdetési szempontok", "ad_angles"), ("Kísérletek (ezekről te döntesz)", "experiments"), ("Mit tanultunk", "learnings")):
+        if m.get(key):
+            parts.append(_h2(heading) + _ul([f"<li style='margin:4px 0'>{_e(x)}</li>" for x in m[key]], 14))
+    if m.get("notes"):
+        parts.append(_h2("Jegyzetek") + _ul([f"<li style='margin:3px 0'>{_e(n)}</li>" for n in m["notes"]]))
+    parts.append(f'<hr style="border:0;border-top:1px solid {LINE};margin:26px 0 8px"><div style="color:{MUTED};font-size:12px">Ads Engine {_e(version.label())} · üzemmód: {_e(m["mode"])} · {_e(m["generated"])}</div>')
+    return (f'<!doctype html><html lang="hu"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{_e(monthly_subject(m))}</title></head>'
+            f'<body style="margin:0;padding:0;background:#f3f4f6;{FONT}"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:16px">'
+            f'<table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:8px"><tr><td style="padding:24px 28px;{FONT};color:{INK}">'
+            + "".join(parts) + "</td></tr></table></td></tr></table></body></html>")
+
+
+def deliver_monthly(settings, project, store, m, *, send=mailer.send):
+    """A havi terv levele: mentés a /data/plans alá (szöveg + HTML) és küldés. Visszaad: {subject, mailed, mail_error}."""
+    text, body = render_monthly_text(m), render_monthly_html(m)
+    folder = settings.data_dir / "plans"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{project.slug}-{m['month']}.txt").write_text(text, encoding="utf-8")
+    (folder / f"{project.slug}-{m['month']}.html").write_text(body, encoding="utf-8")
+    out = {"subject": monthly_subject(m), "mailed": False, "mail_error": ""}
+    try:
+        send(settings, out["subject"], text, body)
+        out["mailed"] = True
+    except mailer.MailError as e:
+        out["mail_error"] = str(e)
+        log.warn("monthly.mail_failed", error=str(e))
+    store.put(f"{project.slug}.last_monthly", {"month": m["month"], "mailed": out["mailed"]})
     return out

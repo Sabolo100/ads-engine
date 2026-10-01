@@ -93,6 +93,7 @@ class MockGoogleAds:
         self.state = {}                          # customer_id → {típus: {resourceName: dict}}
         self.metrics = {}                        # customer_id → [(típus, azonosító, dátum, {metrika})]
         self.change_events = {}                  # customer_id → [dict]
+        self.reject_images = False               # igaz: a kép-eszköz kampányhoz kötése hibát ad (új fiók: a kép-bővítmény még nem engedélyezett)
         self.identity = {"verificationProgram": "ADVERTISER_IDENTITY_VERIFICATION", "verificationProgress": {"programStatus": "SUCCESS"}}
         self.constants = {
             "languageConstant": [{"resourceName": "languageConstants/1024", "id": "1024", "code": "hu", "name": "Hungarian", "targetable": True},
@@ -448,6 +449,8 @@ class MockGoogleAds:
                                 "a kulcsszó túl hosszú", "keyword.text")
             if not text.strip():
                 raise MockError("criterionError.INVALID_KEYWORD_TEXT", "üres kulcsszó", "keyword.text")
+        if typ == "campaignAsset" and create and res.get("fieldType") == "AD_IMAGE" and self.reject_images:
+            raise MockError("assetLinkError.ASSET_NOT_ELIGIBLE", "a fiók még nem jogosult kép-bővítményre (legalább 60 napos fiók kell)", "asset")
         if typ == "asset" and create:
             if res.get("imageAsset"):
                 data = (res["imageAsset"] or {}).get("data")

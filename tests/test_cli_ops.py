@@ -156,6 +156,37 @@ class WeeklyCommandTests(CliBase):
         self.assertIn("(levélben elment)", self.cli("status")[1])
 
 
+class MonthlyCommandTests(CliBase):
+    def test_live_monthly_needs_confirmation(self):
+        code, out = self.cli("monthly")
+        self.assertEqual(code, 1)
+        self.assertIn("--yes", out)
+
+    def test_monthly_prints_the_plan_mails_it_and_status_remembers(self):
+        self.monthly_answer["keyword_ideas"] = [{"text": "őszi kutyafajta választó", "ad_group": "Kutyafajta-választó kvíz", "match": "PHRASE", "reason": "szezon"}]
+        code, out = self.cli("monthly", "--yes", "--mail")
+        self.assertEqual(code, 0, out)
+        for part in ("havi terv", "A HÓNAP TÉMÁJA", "Őszi séták a kutyával", "őszi kutyafajta választó [PHRASE] → Kutyafajta-választó kvíz [kész]", "A levél elment."):
+            self.assertIn(part, out)
+        self.assertEqual(len([m for m in self.smtp.messages if "Havi terv" in m["Subject"]]), 1)
+        status = self.cli("status")[1]
+        self.assertIn("Utolsó havi terv:", status)
+        self.assertIn("(levélben elment)", status)
+        self.assertIn("AI-képek ebben a hétben: 0 / 10", status)
+
+    def test_dry_monthly_needs_no_confirmation(self):
+        self.e.env["ENGINE_MODE"] = "dry"
+        code, out = self.cli("monthly")
+        self.assertEqual(code, 0, out)
+        self.assertIn("PRÓBAÜZEM (dry)", out)
+
+    def test_monthly_without_the_ai_key_says_why(self):
+        self.e.env["ANTHROPIC_API_KEY"] = ""
+        code, out = self.cli("monthly", "--yes")
+        self.assertEqual(code, 1)
+        self.assertIn("ANTHROPIC_API_KEY", out)
+
+
 class TickAndHealthTests(unittest.TestCase):
     def test_tick_without_a_customer_has_nothing_to_do(self):
         e = Env(mode="live", customer="")
@@ -190,7 +221,7 @@ class TickAndHealthTests(unittest.TestCase):
             self.assertTrue(out.startswith("ads-engine "))
             from ads_engine import cli
             doc = cli.__doc__
-            for cmd in ("serve", "tick", "sync", "weekly", "report", "confirm-budget", "stop", "healthcheck"):
+            for cmd in ("serve", "tick", "sync", "weekly", "monthly", "report", "confirm-budget", "stop", "healthcheck"):
                 self.assertIn(cmd, doc)
                 self.assertIn(cmd, cli.COMMANDS)
         finally:

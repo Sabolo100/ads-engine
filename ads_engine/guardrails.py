@@ -178,3 +178,14 @@ def vet_keyword_pause(kw, ad_group_rows, web, brief, validators, *, hands_off=()
     if kw.get("resource_name") in hands_off or kw.get("campaign_rn") in hands_off:
         reasons.append("kézben van (ember módosította)")
     return reasons
+
+
+def iso_week(d):
+    """ISO-hét azonosítója (pl. 2026-W42): a heti számlálók (AI-képkeret) és a heti feladat időszaka."""
+    y, w, _ = d.isocalendar()
+    return f"{y}-W{w:02d}"
+
+
+def requires_human(brief):
+    """Szabályozott terület (compliance.category = regulated): a motor nem módosít magától, csak jelent; a fékek (csökkentés) élnek."""
+    return (brief or {}).get("compliance", {}).get("category") == "regulated"

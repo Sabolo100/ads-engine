@@ -7,9 +7,10 @@ Az újrafuttatás nem duplikál: a kampányt név és `ads-engine` címke alapj�
 """
 import dataclasses
 import datetime as dt
+import re
 from zoneinfo import ZoneInfo
 
-from . import builder, images as imgs, net, pack as packmod, reportdata
+from . import builder, factory, images as imgs, net, pack as packmod, reportdata
 from .executor import Executor, WriteRefused, enable_campaign_ops
 from .google.client import GoogleAdsError
 from .guardrails import ENGINE_LABEL, MICROS
@@ -101,6 +102,14 @@ def make_plan(settings, project, store, *, client=None, fetch=net.fetch, **fetch
     return PlanResult(tree.summary, pk.warnings, problems, tree, pk)
 
 
+def error_indexes(e):
+    """A Google hibájában szereplő művelet-indexek (mutate_operations[N]): megmondja, melyik művelet hibás."""
+    out = set()
+    for err in getattr(e, "errors", []) or []:
+        out.update(int(m) for m in re.findall(r"mutate_operations\[(\d+)\]", err.get("path", "") or ""))
+    return out
+
+
 def existing_image_assets(client, cid, names):
     """A már feltöltött kép-eszközök (név → erőforrásnév): a tartalom-hash névből tudjuk, hogy ugyanaz a kép."""
     if not names:
@@ -127,7 +136,15 @@ def launch(settings, project, store, client, run_id, *, fetch=net.fetch, **fetch
     ex = Executor(client, store, settings, project, run_id)
     after = {"summary": plan.summary, "pack": plan.pack.content_hash}
     if not settings.live:
-        ex.apply("launch", tree.ops, target=name, reason="induló csomag (próba)", before=None, after=after)
+        try:
+            ex.apply("launch", tree.ops, target=name, reason="induló csomag (próba)", before=None, after=after)
+        except GoogleAdsError as e:
+            idx = error_indexes(e)
+            if tree.core_len < len(tree.ops) and idx and min(idx) >= tree.core_len:      # csak a képek hibásak (pl. új fiók: kép-bővítmény még nem engedélyezett)
+                ex.apply("launch", tree.core_ops, target=name, reason="induló csomag (próba, képek nélkül)", before=None, after=after)
+                warnings.append(f"A képek próbája nem sikerült, a kampány képek nélkül rendben: {str(e)[:200]}. {factory.ELIGIBILITY_HINT}")
+                return {"status": "validated", "summary": plan.summary, "warnings": warnings}
+            raise
         return {"status": "validated", "summary": plan.summary, "warnings": warnings}
     resp = ex.apply("launch", tree.core_ops, target=name, reason="induló csomag", before=None, after=after)
     camp_rn = resp["mutateOperationResponses"][tree.campaign_index]["campaignResult"]["resourceName"]
@@ -140,8 +157,12 @@ def launch(settings, project, store, client, run_id, *, fetch=net.fetch, **fetch
             img_ops = builder.build_image_ops(project.customer_id, camp_rn, prepared, existing)
             ex.apply("launch_images", img_ops, target=name, reason="induló képek", after={"images": len(prepared)})
             images_added = len(prepared)
+            reg = factory.Registry(store, settings, project)
+            for p in prepared:
+                reg.add(p, "pack", {"launch": True}, "uploaded")                              # a projekt saját képe: védett, a heti kör nem tölti fel újra
         except (GoogleAdsError, net.FetchError, imgs.ImageError) as e:
-            warnings.append(f"A képek feltöltése nem sikerült (a kampány létrejött, a képek később pótolhatók): {e}")
+            warnings.append(f"A képek feltöltése nem sikerült (a kampány létrejött, a képeket a heti kör később pótolja): {e}" +
+                            (f" {factory.ELIGIBILITY_HINT}" if isinstance(e, GoogleAdsError) else ""))
     store.put(f"{project.slug}.launch", {"campaign": name, "campaign_rn": camp_rn, "pack": plan.pack.content_hash,
                                          "summary": plan.summary, "images_added": images_added})
     return {"status": "created", "campaign": camp_rn, "summary": plan.summary, "warnings": warnings, "images_added": images_added}
