@@ -1,0 +1,22 @@
+# Titkok és kulcsok – soha ne kerüljenek verziókezelésbe (a kulcsok a Coolify titkos változóiban vannak)
+.env
+*.key
+*.pem
+service_account*.json
+*-service-account*.json
+client_secret*.json
+Ads_API*.json
+Coolifytoken.txt
+OpenAI_API.txt
+Anthropic_API.txt
+
+# Futásidejű állapot és gyorsítótár
+data/
+.cache/
+tmp/
+__pycache__/
+*.pyc
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+STOP

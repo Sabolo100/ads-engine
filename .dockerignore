@@ -1,0 +1,13 @@
+.git
+.cache
+data
+tmp
+tests
+docs
+examples
+__pycache__
+*.pyc
+.env
+*.key
+*.pem
+service_account*.json

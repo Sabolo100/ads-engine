@@ -1,0 +1,19 @@
+# Az Ads Engine projektjei (nem titkos adatok). Új projekt = új [[project]] blokk, majd deploy.
+# A titkok (kulcsok, jelszavak, címzettek) a Coolify környezeti változóiban vannak, nem itt.
+
+[[project]]
+slug = "pacsi"
+name = "Pacsi"
+site = "https://pacsit.hu"
+brief_url = "https://pacsit.hu/ads/brief.json"
+# A Google Ads ügyfélfiók azonosítója (10 számjegy, kötőjel nélkül), amint a „Pacsit” fiók létrejött:
+customer_id = ""
+umami_website_id = "54fc0966-6e5f-4ad6-b8c3-7ea5af9642e9"
+language = "hu"
+country = "HU"
+currency = "HUF"
+timezone = "Europe/Budapest"
+# Csak ezekre a gazdagépekre mutathat hirdetés és innen tölthető le kép (a briefben ezt nem lehet felülírni):
+allowed_hosts = ["pacsit.hu", "www.pacsit.hu"]
+image_hosts = ["pacsit.hu"]
+max_images_per_week = 10
