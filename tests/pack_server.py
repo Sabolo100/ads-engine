@@ -26,6 +26,13 @@ class PackServer:
                 if path in outer.overrides:
                     status, headers, body = outer.overrides[path]
                     return self.reply(status, headers, body)
+                query = self.path.split("?", 1)[1] if "?" in self.path else ""
+                if path == "/":
+                    return self.reply(200, {"Content-Type": "text/html; charset=utf-8"}, b"<html><body>Pacsi</body></html>")
+                if path == "/kviz":                  # mint az éles nginx: a lekérdezés megmarad, a # utáni rész az app állapota
+                    return self.reply(302, {"Location": f"/?{query}#kviz"}, b"")
+                if path == "/drops":                 # hibás átirányítás: a lekérdezés elvész
+                    return self.reply(302, {"Location": "/"}, b"")
                 if path == "/redirect-evil":
                     return self.reply(302, {"Location": "http://evil.example.com/x"}, b"")
                 if path == "/redirect-loop":

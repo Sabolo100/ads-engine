@@ -4,12 +4,11 @@ A szerződés a docs/ADS_ENGINE_BEKOTES.md-ben van. Itt: letöltés (SSRF-védel
 tartalmi ellenőrzés. Hibás csomagot a motor nem használ: a hibalista a heti levélbe és a `plan` kimenetére kerül.
 """
 import dataclasses
-import hashlib
 import json
 import pathlib
 import urllib.parse
 
-from . import jsonschema_lite, net, validators
+from . import net, packcheck
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCHEMA_DIR = ROOT / "schema"
@@ -50,84 +49,19 @@ def resolve(base, ref):
 
 # ------------------------------------------------------------------ ellenőrzés
 def validate_brief(brief, project=None):
-    """Séma + tartalmi ellenőrzés. Visszaadja a hibák (str) és a figyelmeztetések (str) listáját."""
-    errs = jsonschema_lite.validate(load_schema("ads-brief.schema.json"), brief)
-    warns = []
-    if errs:
-        return errs, warns
-    ids = [p["id"] for p in brief["landing_pages"]]
-    if len(set(ids)) != len(ids):
-        errs.append("landing_pages: az azonosítók nem lehetnek ismétlődők")
-    fids = [f["id"] for f in brief["product"]["facts"]]
-    if len(set(fids)) != len(fids):
-        errs.append("product.facts: az azonosítók nem lehetnek ismétlődők")
+    """Séma + tartalmi ellenőrzés a projekt konfigjával (slug, engedélyezett gazdagépek, Umami-azonosító). (hibák, figyelmeztetések)"""
+    kw = {}
     if project:
-        if brief["project"]["slug"] != project.slug:
-            errs.append(f"project.slug ({brief['project']['slug']}) nem egyezik a motor konfigjával ({project.slug})")
-        allowed = {h.lower() for h in project.allowed_hosts}
-        if host_of(brief["project"]["site"]) not in allowed:
-            errs.append(f"project.site gazdagépe nincs az engedélyezettek között: {host_of(brief['project']['site'])}")
-        for p in brief["landing_pages"]:
-            if host_of(p["url"]) not in allowed:
-                errs.append(f"landing_pages[{p['id']}].url gazdagépe nincs az engedélyezettek között: {host_of(p['url'])}")
-        wid = brief.get("tracking", {}).get("umami_website_id")
-        if wid and project.umami_website_id and wid != project.umami_website_id:
-            warns.append("tracking.umami_website_id eltér a motor konfigjában lévőtől (a konfig az irányadó)")
-    return errs, warns
+        kw = {"slug": project.slug, "allowed_hosts": project.allowed_hosts, "umami_website_id": project.umami_website_id}
+    return packcheck.validate_brief(brief, load_schema("ads-brief.schema.json"), **kw)
 
 
 def validate_creatives(creatives, brief):
-    """Séma + a hirdetésszövegek, kulcsszavak, hivatkozások tartalmi ellenőrzése. (hibák, figyelmeztetések) – str listák."""
-    errs = jsonschema_lite.validate(load_schema("creative-pack.schema.json"), creatives)
-    warns = []
-    if errs:
-        return errs, warns
-    landing_ids = {p["id"] for p in brief["landing_pages"]}
-    ids = [a["id"] for a in creatives["adsets"]]
-    if len(set(ids)) != len(ids):
-        errs.append("adsets: az azonosítók nem lehetnek ismétlődők")
-    all_positive = []
-    for a in creatives["adsets"]:
-        all_positive += [k["text"] for k in a["keywords"]]
-    for a in creatives["adsets"]:
-        tag = f"adsets[{a['id']}]"
-        if a["landing"] not in landing_ids:
-            errs.append(f"{tag}.landing ({a['landing']}) nincs a brief landing_pages között")
-        for i in validators.check_rsa(a["headlines"], a["descriptions"], a.get("path1", ""), a.get("path2", ""), brief):
-            (errs if i.level == "error" else warns).append(f"{tag}: {i}")
-        positives = [k["text"] for k in a["keywords"]]
-        for k in a["keywords"]:
-            for i in validators.check_keyword(k["text"], brief):
-                (errs if i.level == "error" else warns).append(f"{tag}.keywords: {i}")
-        for n in a.get("negatives", []):
-            for i in validators.check_negative(n, brief, positives):
-                (errs if i.level == "error" else warns).append(f"{tag}.negatives: {i}")
-    for n in brief["keywords"].get("negatives", []):
-        for i in validators.check_negative(n, brief, all_positive):
-            (errs if i.level == "error" else warns).append(f"brief.keywords.negatives: {i}")
-    seen = set()
-    for s in creatives.get("sitelinks", []):
-        if s["landing"] not in landing_ids:
-            errs.append(f"sitelinks[{s['text']}].landing ({s['landing']}) nincs a brief landing_pages között")
-        if validators.norm(s["text"]) in seen:
-            errs.append(f"sitelinks: ismétlődő szöveg: {s['text']}")
-        seen.add(validators.norm(s["text"]))
-        for text, kind in ((s["text"], "sitelink"), (s.get("description1", ""), "sitelink_desc"), (s.get("description2", ""), "sitelink_desc")):
-            if text:
-                for i in validators.check_text(text, kind, brief, where="hivatkozás"):
-                    (errs if i.level == "error" else warns).append(f"sitelinks: {i}")
-    for c in creatives.get("callouts", []):
-        for i in validators.check_text(c, "callout", brief, where="kiemelés"):
-            (errs if i.level == "error" else warns).append(f"callouts: {i}")
-    img_ids = [i["id"] for i in creatives.get("images", [])]
-    if len(set(img_ids)) != len(img_ids):
-        errs.append("images: az azonosítók nem lehetnek ismétlődők")
-    return errs, warns
+    return packcheck.validate_creatives(creatives, brief, load_schema("creative-pack.schema.json"))
 
 
-def content_hash(brief, creatives):
-    blob = json.dumps({"brief": brief, "creatives": creatives}, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    return hashlib.sha256(blob).hexdigest()[:12]
+content_hash = packcheck.content_hash
+host_of = packcheck.host_of
 
 
 # ------------------------------------------------------------------ betöltés
