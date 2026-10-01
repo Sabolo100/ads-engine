@@ -47,8 +47,9 @@ class LeaseBusy(Exception):
     """A zárat egy másik példány tartja."""
 
 
-def _now_iso():
-    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+def _now_iso(clock=time.time):
+    """UTC időbélyeg a tároló óráját követve (a próbák hamis órával dolgoznak, hogy a „ebben a hétben” korlátok ellenőrizhetők legyenek)."""
+    return dt.datetime.fromtimestamp(clock(), dt.timezone.utc).isoformat(timespec="seconds")
 
 
 def _dumps(v):
@@ -86,7 +87,7 @@ class Store:
     def put(self, key, value):
         with self._lock:
             self._db.execute("INSERT INTO kv(key, value, updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET "
-                             "value=excluded.value, updated_at=excluded.updated_at", (key, _dumps(value), _now_iso()))
+                             "value=excluded.value, updated_at=excluded.updated_at", (key, _dumps(value), _now_iso(self.clock)))
 
     def delete(self, key):
         with self._lock:
@@ -135,13 +136,13 @@ class Store:
     def start_run(self, project, kind, mode):
         with self._lock:
             cur = self._db.execute("INSERT INTO runs(project, kind, mode, started_at) VALUES(?,?,?,?)",
-                                   (project, kind, mode, _now_iso()))
+                                   (project, kind, mode, _now_iso(self.clock)))
             return cur.lastrowid
 
     def finish_run(self, run_id, status, summary=None):
         with self._lock:
             self._db.execute("UPDATE runs SET finished_at=?, status=?, summary=? WHERE id=?",
-                             (_now_iso(), status, _dumps(summary), run_id))
+                             (_now_iso(self.clock), status, _dumps(summary), run_id))
 
     def last_run(self, project, kind, status=None):
         q, args = "SELECT * FROM runs WHERE project=? AND kind=?", [project, kind]
@@ -173,7 +174,7 @@ class Store:
             cur = self._db.execute(
                 "INSERT INTO actions(run_id, project, ts, kind, target, before, after, status, reason, mode, request_id) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (run_id, project, _now_iso(), kind, target, _dumps(before), _dumps(after), status, reason, mode, request_id))
+                (run_id, project, _now_iso(self.clock), kind, target, _dumps(before), _dumps(after), status, reason, mode, request_id))
             return cur.lastrowid
 
     def actions(self, project=None, run_id=None, kind=None, since=None, limit=200):
@@ -205,7 +206,7 @@ class Store:
             self._db.execute(
                 "INSERT INTO jobs(project, kind, period, status, run_id, updated_at) VALUES(?,?,?,?,?,?) "
                 "ON CONFLICT(project, kind, period) DO UPDATE SET status=excluded.status, run_id=excluded.run_id, "
-                "updated_at=excluded.updated_at", (project, kind, period, status, run_id, _now_iso()))
+                "updated_at=excluded.updated_at", (project, kind, period, status, run_id, _now_iso(self.clock)))
 
     # ------------------------------------------------------------------ számlálók
     def counter(self, project, key, period):
@@ -226,7 +227,7 @@ class Store:
             cur = self._db.execute(
                 "INSERT INTO llm_log(project, purpose, ts, model, effort, status, input_chars, input_tokens, output_tokens, output, request_id, error) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                (project, purpose, _now_iso(), model, effort, status, input_chars, input_tokens, output_tokens, output, request_id, error))
+                (project, purpose, _now_iso(self.clock), model, effort, status, input_chars, input_tokens, output_tokens, output, request_id, error))
             return cur.lastrowid
 
     def llm_calls(self, project=None, purpose=None, limit=50):
@@ -241,7 +242,7 @@ class Store:
     # ------------------------------------------------------------------ pillanatképek
     def snapshot_put(self, project, kind, data, keep=20):
         with self._lock:
-            self._db.execute("INSERT INTO snapshots(project, kind, ts, data) VALUES(?,?,?,?)", (project, kind, _now_iso(), _dumps(data)))
+            self._db.execute("INSERT INTO snapshots(project, kind, ts, data) VALUES(?,?,?,?)", (project, kind, _now_iso(self.clock), _dumps(data)))
             self._db.execute("DELETE FROM snapshots WHERE project=? AND kind=? AND id NOT IN "
                              "(SELECT id FROM snapshots WHERE project=? AND kind=? ORDER BY id DESC LIMIT ?)",
                              (project, kind, project, kind, keep))

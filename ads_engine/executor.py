@@ -54,6 +54,7 @@ class Executor:
         except GoogleAdsError as e:
             self.store.log_action(status="failed", mode="live", request_id=e.request_id, **{**log_kw, "reason": f"{reason} | {e}"[:900]})
             raise
+        self.store.put(f"{self.project.slug}.snapshot_stale", True)       # a saját írásunkat a következő szinkron ne vegye emberi módosításnak
         self.store.log_action(status="applied", mode="live" if not safety else "safety", request_id=self.client.last_request_id, **log_kw)
         log.info("executor.applied", kind=kind, target=target, safety=safety)
         return resp

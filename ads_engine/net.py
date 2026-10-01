@@ -69,8 +69,11 @@ class _Guard(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def fetch(url, allowed_hosts, *, max_bytes=5_000_000, timeout=20, headers=None, allow_private=False, allow_http=False, max_redirects=3):
-    """Letöltés a szabályok szerint. 304 (ETag egyezés) esetén üres törzzsel tér vissza. FetchError minden szabálysértésre."""
+def fetch(url, allowed_hosts, *, max_bytes=5_000_000, timeout=20, headers=None, allow_private=False, allow_http=False, max_redirects=3, truncate=False):
+    """Letöltés a szabályok szerint. 304 (ETag egyezés) esetén üres törzzsel tér vissza. FetchError minden szabálysértésre.
+
+    truncate=True: a max_bytes-nál nagyobb választ nem hiba, csak az elejét olvassa (az oldal-elérhetőségi őrnek elég az állapot és a
+    végső cím; a nagy – pl. egyfájlos PWA – oldal ettől még elérhető)."""
     check_url(url, allowed_hosts, allow_private=allow_private, allow_http=allow_http)
     hdrs = {"User-Agent": f"ads-engine/{version.version()}", "Accept": "*/*"}
     hdrs.update(headers or {})
@@ -78,11 +81,13 @@ def fetch(url, allowed_hosts, *, max_bytes=5_000_000, timeout=20, headers=None, 
     try:
         with opener.open(urllib.request.Request(url, headers=hdrs), timeout=timeout) as r:
             clen = r.headers.get("Content-Length")
-            if clen and clen.isdigit() and int(clen) > max_bytes:
+            if not truncate and clen and clen.isdigit() and int(clen) > max_bytes:
                 raise FetchError(f"a fájl túl nagy ({int(clen)} bájt, a korlát {max_bytes})")
             body = r.read(max_bytes + 1)
             if len(body) > max_bytes:
-                raise FetchError(f"a fájl túl nagy (több mint {max_bytes} bájt)")
+                if not truncate:
+                    raise FetchError(f"a fájl túl nagy (több mint {max_bytes} bájt)")
+                body = body[:max_bytes]
             return Fetched(r.status, {k.lower(): v for k, v in r.headers.items()}, body, r.geturl())
     except urllib.error.HTTPError as e:
         if e.code == 304:

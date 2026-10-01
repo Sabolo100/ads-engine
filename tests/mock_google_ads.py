@@ -391,6 +391,9 @@ class MockGoogleAds:
             res["id"] = str(rid)
         if typ in ("adGroupCriterion", "campaignCriterion"):
             res["criterionId"] = str(rid)
+            res.setdefault("negative", False)                    # a Google a mezőt hamisként is visszaadja
+            if typ == "campaignCriterion":
+                res["type"] = "KEYWORD" if res.get("keyword") else "LOCATION" if res.get("location") else "LANGUAGE" if res.get("language") else "UNKNOWN"
         if typ == "adGroupAd":
             res.setdefault("ad", {})["id"] = str(rid)
         res.setdefault("status", "ENABLED")
@@ -520,11 +523,16 @@ class MockGoogleAds:
         # metrikák: ha a SELECT tartalmaz metrics.*, minden sorhoz összegezzük (vagy dátumonként bontjuk)
         wants_metrics = any(f.startswith("metrics.") for f in fields)
         wants_date = "segments.date" in fields
+        date_range = None
+        for field, op, raw in conds:
+            if field == "segments.date" and op == "BETWEEN":
+                lo, hi = re.findall(r"'([^']*)'", raw)[:2]
+                date_range = (lo, hi)
         out = []
         for src in sources:
             variants = [(src, None)]
             if wants_metrics or wants_date:
-                variants = self.metric_variants(cid, typ, src, wants_date)
+                variants = self.metric_variants(cid, typ, src, wants_date, date_range)
             for s, date in variants:
                 s = dict(s)
                 if date:
@@ -545,7 +553,7 @@ class MockGoogleAds:
             b = st.get("campaignBudget", {}).get(r.get("campaignBudget"))
             if b:
                 row["campaignBudget"] = json.loads(json.dumps(b))
-        if "adGroup" in r and typ in ("adGroupAd", "adGroupCriterion"):
+        if "adGroup" in r and typ in ("adGroupAd", "adGroupCriterion", "searchTerm", "adAssetView"):
             ag = st.get("adGroup", {}).get(r["adGroup"])
             if ag:
                 row["adGroup"] = json.loads(json.dumps(ag))
@@ -560,21 +568,26 @@ class MockGoogleAds:
             l = st.get("label", {}).get(r.get("label"))
             if l:
                 row["label"] = json.loads(json.dumps(l))
-        if typ == "campaignAsset":
+        if typ in ("campaignAsset", "adAssetView"):
             a = st.get("asset", {}).get(r.get("asset"))
             if a:
                 row["asset"] = json.loads(json.dumps(a))
+        if typ == "adAssetView":
+            ad = st.get("adGroupAd", {}).get(r.get("adGroupAd"))
+            if ad:
+                row["adGroupAd"] = json.loads(json.dumps(ad))
         if typ == "campaign":
             row["campaign"].setdefault("primaryStatus", "ELIGIBLE" if r.get("status") == "ENABLED" else "PAUSED")
             labels = [lb for lb in st.get("campaignLabel", {}).values() if lb.get("campaign") == r["resourceName"] and lb.get("status") != "REMOVED"]
             row["campaign"]["labels"] = [lb["label"] for lb in labels]
         return row
 
-    def metric_variants(self, cid, typ, src, wants_date):
-        key_obj = {"campaign": "campaign", "adGroup": "adGroup", "adGroupAd": "adGroupAd", "adGroupCriterion": "adGroupCriterion"}.get(typ, typ)
+    def metric_variants(self, cid, typ, src, wants_date, date_range=None):
+        key_obj = {"searchTerm": "searchTermView", "adAssetView": "adGroupAdAssetView"}.get(typ, typ)
         rec = src.get(key_obj, {}) or {}
-        rid = str(rec.get("resourceName", "")).rsplit("/", 1)[-1] if typ in ("campaign", "adGroup", "adGroupAd", "adGroupCriterion") else None
-        mm = [m for m in self.metrics.get(cid, []) if m[0] == typ and m[1] in (rid, str(rec.get("id", "")))]
+        rid = str(rec.get("resourceName", "")).rsplit("/", 1)[-1]
+        mm = [m for m in self.metrics.get(cid, []) if m[0] == typ and m[1] in (rid, str(rec.get("id", "")))
+              and (not date_range or date_range[0] <= m[2] <= date_range[1])]
         if not mm:
             return [(src, None)] if not wants_date else []
         if wants_date:
@@ -627,7 +640,9 @@ class MockGoogleAds:
         try:
             a, b = float(val), float(target)
         except (TypeError, ValueError):
-            return False
+            a, b = (str(val), str(target)) if val is not None else (None, None)      # sztring-összehasonlítás (pl. dátum-idő)
+            if a is None:
+                return False
         return {">": a > b, "<": a < b, ">=": a >= b, "<=": a <= b}.get(op, False)
 
     @staticmethod

@@ -6,9 +6,11 @@
 Az újrafuttatás nem duplikál: a kampányt név és `ads-engine` címke alapján ismeri fel.
 """
 import dataclasses
+import datetime as dt
+from zoneinfo import ZoneInfo
 
-from . import builder, images as imgs, net, pack as packmod
-from .executor import Executor, WriteRefused
+from . import builder, images as imgs, net, pack as packmod, reportdata
+from .executor import Executor, WriteRefused, enable_campaign_ops
 from .google.client import GoogleAdsError
 from .guardrails import ENGINE_LABEL, MICROS
 
@@ -145,8 +147,9 @@ def launch(settings, project, store, client, run_id, *, fetch=net.fetch, **fetch
     return {"status": "created", "campaign": camp_rn, "summary": plan.summary, "warnings": warnings, "images_added": images_added}
 
 
-def go_live(settings, project, store, client, run_id, weekly_budget):
+def go_live(settings, project, store, client, run_id, weekly_budget, *, today=None):
     """A te jóváhagyásod: valódi napi keret (heti/7) + a kampány bekapcsolása egyetlen atomi művelettel."""
+    today = today or dt.datetime.now(ZoneInfo(project.timezone)).date()
     if weekly_budget <= 0:
         raise LaunchError("A heti keret legyen pozitív szám.")
     if not settings.live:
@@ -165,5 +168,33 @@ def go_live(settings, project, store, client, run_id, weekly_budget):
     ex.apply("go_live", ops, target=name, reason=f"go-live: heti keret {weekly_budget:,.0f} {project.currency}".replace(",", " "),
              before=before, after={"status": "ENABLED", "daily_budget_micros": str(daily)})
     store.put(f"{project.slug}.approved_daily_micros", daily)
-    store.put(f"{project.slug}.go_live", {"weekly_budget": weekly_budget, "daily_micros": daily})
+    store.put(f"{project.slug}.go_live", {"weekly_budget": weekly_budget, "daily_micros": daily, "date": today.isoformat()})
     return {"status": "enabled", "daily_micros": daily, "weekly_budget": weekly_budget, "campaign": camp["resourceName"]}
+
+
+def confirm_budget(settings, project, store, client, run_id, *, enable=False):
+    """A fék (gyanús keretemelés, túlköltés) utáni megerősítés: a Google Ads-ben látható keret lesz a jóváhagyott, és kérésre a fék
+    által szüneteltetett kampányok újra bekapcsolódnak. A keretet itt NEM emeli a motor: csak elfogadja, amit te állítottál be."""
+    cid = project.customer_id
+    campaigns = reportdata.owned_campaigns(client, cid)
+    if not campaigns:
+        raise LaunchError("Nincs motor-kampány a fiókban.")
+    live_daily = sum(c["daily_micros"] for c in campaigns)
+    old = store.get(f"{project.slug}.approved_daily_micros")
+    pause = store.get(f"{project.slug}.guard_pause") or {}
+    held = [c["resource_name"] for c in campaigns if c["resource_name"] in pause.get("campaigns", []) and c["status"] == "PAUSED"]
+    if enable and not settings.live:
+        raise LaunchError("Dry üzemmódban vagyunk (ENGINE_MODE=dry): a visszakapcsoláshoz ENGINE_MODE=live kell.")
+    enabled = []
+    if enable and held:
+        Executor(client, store, settings, project, run_id).apply(
+            "confirm_enable", enable_campaign_ops(held), target=",".join(h.rsplit("/", 1)[-1] for h in held),
+            reason="a keret megerősítve: a fék által szüneteltetett kampányok visszakapcsolva", before={"status": "PAUSED"}, after={"status": "ENABLED"})
+        enabled = held
+    store.put(f"{project.slug}.approved_daily_micros", live_daily)
+    store.delete(f"{project.slug}.needs_budget_confirmation")
+    store.delete(f"{project.slug}.guard_pause")
+    store.put(f"{project.slug}.snapshot_stale", True)
+    store.log_action(run_id, project.slug, "confirm_budget", "napi keret", {"approved_daily_micros": old}, {"approved_daily_micros": live_daily},
+                     "applied", "a felhasználó megerősítette a keretet", settings.mode)
+    return {"approved_daily_micros": live_daily, "previous": old, "enabled": enabled, "held": held}

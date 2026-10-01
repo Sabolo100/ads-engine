@@ -12,13 +12,14 @@ import base64
 import binascii
 import datetime as dt
 import json
+import os
 import pathlib
 import re
 
 from .. import http
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
-CACHE = ROOT / ".cache"
+CACHE = pathlib.Path(os.environ["ADS_CACHE_DIR"]) if os.environ.get("ADS_CACHE_DIR") else ROOT / ".cache"     # Docker: /data/cache
 DISCOVERY_URL = "https://googleads.googleapis.com/$discovery/rest?version={version}"
 
 # Ismert lejáratok (a Google sunset-dates oldala szerint; a v25: 2026. július – 2027. augusztus)

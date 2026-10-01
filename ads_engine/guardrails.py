@@ -110,7 +110,7 @@ def human_change_events(rows, own_resource_names, sa_email=""):
         ev = r.get("changeEvent", {})
         if ev.get("clientType") in API_CLIENT_TYPES or (sa_email and ev.get("userEmail") == sa_email):
             continue
-        if ev.get("changeResourceName") in own_resource_names:
+        if ev.get("changeResourceName") in own_resource_names or ev.get("campaign") in own_resource_names:
             out.append({"resource": ev["changeResourceName"], "who": ev.get("userEmail") or ev.get("clientType", "?"),
                         "client": ev.get("clientType", ""), "when": ev.get("changeDateTime", ""),
                         "fields": ev.get("changedFields", "")})
@@ -120,3 +120,61 @@ def human_change_events(rows, own_resource_names, sa_email=""):
 def never_reenable(prev_status, cur_status, changed_by_non_api):
     """Amit nem API-kliens szüneteltetett (te, automatikus szabály, ajánlás), azt a motor nem kapcsolja vissza."""
     return prev_status == "ENABLED" and cur_status == "PAUSED" and changed_by_non_api
+
+
+# ------------------------------------------------------------------ heti módosítások szabályai (a motor MINDEN javaslata ezeken megy át)
+OBSERVATION_DAYS = 14                  # az éles indulás után 14 napig csak megfigyelés és fékek
+MIN_CLICKS_PAUSE = 25                  # ennyi kattintás előtt nem ítélünk kulcsszó felett (kis adatnál nem hajszolunk zajt)
+MIN_WEB_VISITS_TRUST = 5               # ennyi Umami-látogatás alatt a webes adat nem megbízható a döntéshez
+MAX_PAUSES_PER_WEEK = 3
+MAX_NEGATIVES_PER_WEEK = 15
+ROTATE_INTERVAL_DAYS = 14              # RSA-forgatás legfeljebb kéthetente, hirdetéscsoportonként
+MAX_ROTATIONS_PER_WEEK = 2
+HANDS_OFF_DAYS = 28
+
+
+def observation_days_left(go_live_date, today):
+    """Hány napig tart még a megfigyelési időszak (0 = vége). go_live_date: date vagy None (nincs go-live → nincs mit optimalizálni)."""
+    if go_live_date is None:
+        return OBSERVATION_DAYS
+    return max(0, OBSERVATION_DAYS - (today - go_live_date).days)
+
+
+def vet_negative(text, evidence_term, brief, positives, existing, validators):
+    """Egy javasolt negatív kulcsszó ellenőrzése. Üres lista = elfogadható; különben az elutasítás okai.
+
+    · a negatív szavai egybefüggően szerepelnek a megfigyelt keresési kifejezésben (nem találhat ki a motor semmit)
+    · nem zárja ki a mag- és a pozitív kulcsszavakat (pl. a „kutya” tiltott negatív), és már nincs meg."""
+    reasons = [i.message for i in validators.errors(validators.check_negative(text, brief, positives))]
+    nt, et = validators.tokens_of(text), validators.tokens_of(evidence_term)
+    if len(text.strip()) < 3:
+        reasons.append("túl rövid negatív kulcsszó")
+    if len(nt) > 4:
+        reasons.append("túl hosszú negatív kulcsszó (legfeljebb 4 szó)")
+    if not any(et[i:i + len(nt)] == nt for i in range(len(et) - len(nt) + 1)) or not nt:
+        reasons.append("a negatív nem szerepel a megfigyelt keresési kifejezésben")
+    if validators.norm(text) in {validators.norm(x) for x in existing}:
+        reasons.append("már van ilyen negatív kulcsszó")
+    return reasons
+
+
+def vet_keyword_pause(kw, ad_group_rows, web, brief, validators, *, hands_off=()):
+    """Kulcsszó szüneteltetése: elég adat, bizonyíthatóan nem hoz bevont látogatást, nem a mag, nem az utolsó a csoportban, nincs „kézben”."""
+    reasons = []
+    if kw["status"] != "ENABLED":
+        reasons.append("nem aktív")
+    if kw["clicks"] < MIN_CLICKS_PAUSE:
+        reasons.append(f"kevés adat ({kw['clicks']} kattintás < {MIN_CLICKS_PAUSE})")
+    if web is None or web.get("visits", 0) < MIN_WEB_VISITS_TRUST:
+        reasons.append("nincs megbízható webes adat a kulcsszóhoz")
+    elif web.get("engaged", 0) > 0:
+        reasons.append("hoz bevont látogatást")
+    core = {validators.norm(c) for c in brief.get("keywords", {}).get("core", [])}
+    if validators.norm(kw["text"]) in core:
+        reasons.append("magkifejezés (a brief védi)")
+    enabled_in_group = [r for r in ad_group_rows if r["ad_group_id"] == kw["ad_group_id"] and r["status"] == "ENABLED"]
+    if len(enabled_in_group) <= 1:
+        reasons.append("az utolsó aktív kulcsszó a hirdetéscsoportban")
+    if kw.get("resource_name") in hands_off or kw.get("campaign_rn") in hands_off:
+        reasons.append("kézben van (ember módosította)")
+    return reasons

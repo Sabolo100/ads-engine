@@ -1,21 +1,31 @@
 """Parancssor: python -m ads_engine <parancs>
 
+Beállítás és indítás:
   check [--project pacsi] [--offline]   beállítás-ellenőrzés; kiírja a KÖVETKEZŐ HIÁNYZÓ LÉPÉST (kilépési kód: 1, ha van)
-  status [--project pacsi]              üzemmód, utolsó futások, jóváhagyott keret, zár, STOP
-  api-check [--api-version v25]         a Google API leíró frissítése, lejárat, újabb verzió
   plan [--project pacsi]                az Ads Pack letöltése és ellenőrzése, a kampányfa összegzése (nem ír)
   launch [--project pacsi] [--yes]      szüneteltetett kampány létrehozása (dry: csak validateOnly; --yes nélkül csak terv)
   go-live --weekly-budget N --yes       a valódi heti keret beállítása és a kampány bekapcsolása (csak ENGINE_MODE=live)
+Üzem (ezeket az ütemező magától futtatja; kézzel is indíthatók):
+  serve                                 a szolgáltatás: ütemező + /healthz (a Docker-konténer fő parancsa)
+  tick                                  az esedékes feladatok egyszeri futtatása
+  sync [--project pacsi]                napi szinkron és védelmek azonnal (kampány-fékek, brief-figyelő, nyitóoldal)
+  weekly [--project pacsi] [--mail] [--no-ai] [--yes]   heti kiértékelés azonnal; élesben módosít (ehhez --yes kell)
+  report [--project pacsi]              az utolsó heti jelentés kiírása
+  confirm-budget --yes [--enable]       a Google Ads-ben látható keret elfogadása fék után; --enable: a szüneteltetett kampányok visszakapcsolása
+  status [--project pacsi]              üzemmód, utolsó futások, jóváhagyott keret, zár, STOP
+  stop | resume                         a STOP fájl létrehozása/törlése (a motor ilyenkor semmit nem ír, csak a fékek futnak)
+  healthcheck                           a helyi /healthz lekérdezése (Docker HEALTHCHECK)
+  api-check [--api-version v25]         a Google API leíró frissítése, lejárat, újabb verzió
   --version                             verzió és build-azonosító
 
-A parancsok `--yes` nélkül semmit nem írnak a Google Ads-be (a következő mérföldkövekben jönnek a sync/review/report).
+A Google Ads-be író parancsok `--yes` nélkül nem írnak (a launch és a weekly élesben megerősítést kér).
 """
 import argparse
 import os
 import socket
 import sys
 
-from . import __version__, checks, config, label, launch, log, pack as packmod, runtime
+from . import __version__, checks, config, http, label, launch, log, pack as packmod, reports, review, runtime, scheduler, sync
 from .google import discovery
 from .google.auth import AuthError
 from .google.client import GoogleAdsError
@@ -49,16 +59,211 @@ def cmd_status(args, settings):
     _out(f"STOP fájl: {'VAN – a motor nem ír' if stop else 'nincs'}")
     holder = store.lease_holder("engine")
     _out(f"Zár: {holder or 'szabad'}")
-    approved = store.get(f"{project.slug}.approved_daily_micros")
+    slug = project.slug
+    approved = store.get(f"{slug}.approved_daily_micros")
     if approved:
         _out(f"Jóváhagyott keret: {approved / 1_000_000:,.0f} {project.currency}/nap ({approved * 7 / 1_000_000:,.0f} /hét)".replace(",", " "))
+        go = store.get(f"{slug}.go_live") or {}
+        if go.get("date"):
+            _out(f"Éles indulás: {go['date']}")
     else:
         _out("Jóváhagyott keret: nincs (a go-live előtt a kampányok szüneteltetve maradnak)")
-    runs = store.runs(project.slug, limit=5)
+    if store.get(f"{slug}.needs_budget_confirmation"):
+        _out("⚠ A kampány fék miatt szünetel, megerősítésre vár: python -m ads_engine confirm-budget --yes --enable")
+    elif store.get(f"{slug}.guard_pause"):
+        _out("⚠ A kampány fék miatt szünetel (túlköltés): nézd meg a levelet; ha rendben: python -m ads_engine confirm-budget --yes --enable")
+    hands = store.get(f"{slug}.hands_off", {}) or {}
+    if hands:
+        _out(f"Kézben lévő objektum (ember módosította, a motor nem nyúl hozzá): {len(hands)}")
+    ls = store.get(f"{slug}.last_sync")
+    _out(f"Utolsó napi szinkron: {ls['date'] if ls else 'még nem volt'}")
+    lr = store.get(f"{slug}.last_report")
+    _out(f"Utolsó heti jelentés: {lr['period_end'] + (' (levélben elment)' if lr.get('mailed') else ' (a levél NEM ment el)') if lr else 'még nem volt'}")
+    runs = [r for r in store.runs(slug, limit=60) if r["kind"] != "guard"][:6]
     _out("Utolsó futások:" if runs else "Még nem volt futás.")
     for r in runs:
-        _out(f"  #{r['id']} {r['started_at']} {r['kind']:<8} {r['status']:<8} ({r['mode']})")
+        _out(f"  #{r['id']} {r['started_at']} {r['kind']:<12} {r['status']:<8} ({r['mode']})")
     store.close()
+    return 0
+
+
+def _google_or_none(settings):
+    try:
+        client = runtime.google_client(settings)
+    except AuthError as e:
+        _out(f"✗ {e}")
+        return None
+    if client is None:
+        _out("✗ Nincs Google szolgáltatásfiók-kulcs (GADS_SA_JSON_B64) – futtasd: python -m ads_engine check")
+    return client
+
+
+def _locked(settings, fn):
+    """A parancs a zár alatt fut (egyszerre egy példány írhat). Visszaad: (kód, eredmény)."""
+    store = runtime.open_store(settings)
+    try:
+        with store.lease("engine", _owner()):
+            return fn(store)
+    except LeaseBusy as e:
+        _out(f"✗ {e} – várd meg, míg az ütemező befejezi, vagy próbáld később.")
+        return 1
+    finally:
+        store.close()
+
+
+def cmd_sync(args, settings):
+    project = settings.project(args.project)
+    client = _google_or_none(settings)
+    if client is None:
+        return 1
+
+    def run(store):
+        run_id = store.start_run(project.slug, "sync", settings.mode)
+        try:
+            summary = scheduler.job_sync(settings, store, project, run_id, sync.now_in(project),
+                                         scheduler.Deps(client=client, fetch_kw=_fetch_kwargs(settings)))
+        except (GoogleAdsError, AuthError) as e:
+            store.finish_run(run_id, "failed", {"error": str(e)})
+            _out(f"✗ {e}")
+            return 1
+        store.finish_run(run_id, "ok", summary)
+        _out(f"Szinkron kész: {summary['campaigns']} kampány · fékek: {len(summary['findings'])} megállapítás, {summary['paused']} kampány szüneteltetve · "
+             f"kézi módosítás: {summary['human_changes']} · elutasított hirdetés: {summary['disapproved']} · csomag: {summary['pack']}")
+        for f in summary["findings"]:
+            _out(f"  ! {f}")
+        return 0
+    return _locked(settings, run)
+
+
+def cmd_weekly(args, settings):
+    project = settings.project(args.project)
+    if settings.live and not args.yes:
+        _out("A heti kör ÉLES üzemmódban valódi módosításokat végez a Google Ads-ben (negatív kulcsszó, szüneteltetés, hirdetésszöveg-csere).")
+        _out("Megerősítéshez: python -m ads_engine weekly --yes   (ENGINE_MODE=dry mellett nincs írás, csak próba)")
+        return 1
+    client = _google_or_none(settings)
+    if client is None:
+        return 1
+
+    def run(store):
+        run_id = store.start_run(project.slug, "weekly-manual", settings.mode)
+        llm = None if args.no_ai else runtime.llm(settings, store)
+        try:
+            res = review.run_weekly(settings, project, store, client, run_id, llm=llm, umami_client=runtime.umami(settings), now=sync.now_in(project),
+                                    **_fetch_kwargs(settings))
+        except (GoogleAdsError, AuthError) as e:
+            store.finish_run(run_id, "failed", {"error": str(e)})
+            _out(f"✗ {e}")
+            return 1
+        narrative = reports.make_narrative(llm, project.slug, res.report)
+        if args.mail:
+            out = reports.deliver(settings, project, store, res.report, narrative)
+            text = out["text"]
+        else:
+            text = reports.render_text(res.report, narrative)
+            out = {"path": str(reports.save(settings, res.report, text, reports.render_html(res.report, narrative), narrative)), "mailed": False, "mail_error": ""}
+        store.finish_run(run_id, "ok", {"actions": len(res.report["actions"]), "rejected": len(res.report["rejected"]), "report": out["path"]})
+        _out(text)
+        _out(f"(a jelentés elmentve: {out['path']})")
+        if args.mail:
+            _out("A levél elment." if out["mailed"] else f"A levél NEM ment el: {out['mail_error']}")
+        return 0
+    return _locked(settings, run)
+
+
+def cmd_report(args, settings):
+    project = settings.project(args.project)
+    store = runtime.open_store(settings)
+    try:
+        last = store.get(f"{project.slug}.last_report")
+    finally:
+        store.close()
+    if not last:
+        _out("Még nem készült heti jelentés (python -m ads_engine weekly).")
+        return 1
+    try:
+        report, narrative = reports.load_saved(last["path"])
+    except (OSError, ValueError) as e:
+        _out(f"✗ A mentett jelentés nem olvasható ({last['path']}): {e}")
+        return 1
+    _out(reports.render_text(report, narrative))
+    return 0
+
+
+def cmd_confirm_budget(args, settings):
+    project = settings.project(args.project)
+    if not args.yes:
+        _out("A megerősítés a Google Ads-ben JELENLEG beállított keretet fogadja el jóváhagyottként (a motor a keretet soha nem emeli maga).")
+        _out("Ellenőrizd a keretet a Google Ads-ben, majd: python -m ads_engine confirm-budget --yes [--enable]")
+        _out("  --enable: a fék által szüneteltetett kampányokat is visszakapcsolja (ENGINE_MODE=live kell)")
+        return 1
+    client = _google_or_none(settings)
+    if client is None:
+        return 1
+
+    def run(store):
+        run_id = store.start_run(project.slug, "confirm-budget", settings.mode)
+        try:
+            res = launch.confirm_budget(settings, project, store, client, run_id, enable=args.enable)
+        except (launch.LaunchError, GoogleAdsError) as e:
+            store.finish_run(run_id, "failed", {"error": str(e)})
+            _out(f"✗ {e}")
+            return 1
+        store.finish_run(run_id, "ok", res)
+        _out(f"Megerősítve: jóváhagyott napi keret {_money(res['approved_daily_micros'], project.currency)} (heti {_money(res['approved_daily_micros'] * 7, project.currency)}).")
+        if res["enabled"]:
+            _out(f"Visszakapcsolva: {len(res['enabled'])} kampány.")
+        elif res["held"]:
+            _out(f"{len(res['held'])} kampány még szünetel (a fék tette): a visszakapcsoláshoz add meg az --enable kapcsolót (ENGINE_MODE=live).")
+        return 0
+    return _locked(settings, run)
+
+
+def cmd_tick(args, settings):
+    store = runtime.open_store(settings)
+    try:
+        done = scheduler.tick(settings, store)
+    except LeaseBusy as e:
+        _out(f"✗ {e}")
+        return 1
+    finally:
+        store.close()
+    if not done:
+        _out("Nincs esedékes feladat.")
+    for d in done:
+        _out(f"{d['kind']:<7} {d['period']}  {d['status']}" + (f"  – {d['error']}" if d["status"] == "failed" else ""))
+    return 1 if any(d["status"] == "failed" for d in done) else 0
+
+
+def cmd_serve(args, settings):
+    return scheduler.serve(settings)
+
+
+def cmd_healthcheck(args, settings):
+    port = int(settings.env.get("PORT") or 8080)
+    try:
+        r = http.request("GET", f"http://127.0.0.1:{port}/healthz", timeout=5, retries=0)
+    except http.HttpError as e:
+        _out(f"✗ /healthz: HTTP {e.status}")
+        return 1
+    _out(f"ok ({r.status})")
+    return 0
+
+
+def cmd_stop(args, settings):
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    (settings.data_dir / "STOP").write_text("A motor leállítva a stop paranccsal. Törlés: python -m ads_engine resume\n", encoding="utf-8")
+    _out("STOP fájl létrehozva: a motor mostantól semmit nem ír a Google Ads-be (csak a biztonsági fékek futnak).")
+    return 0
+
+
+def cmd_resume(args, settings):
+    f = settings.data_dir / "STOP"
+    if f.exists():
+        f.unlink()
+        _out("STOP fájl törölve: a motor újra dolgozhat.")
+    else:
+        _out("Nincs STOP fájl.")
     return 0
 
 
@@ -94,11 +299,7 @@ def _print_plan(plan, project):
         _out(f" ! {w}")
 
 
-def _fetch_kwargs(settings):
-    """Csak próbákhoz: a helyi álszerverről is letölthessen (a valódi üzemben tiltott)."""
-    if settings.env.get("ADS_TEST_ALLOW_PRIVATE") == "1":
-        return {"allow_private": True, "allow_http": True}
-    return {}
+_fetch_kwargs = runtime.fetch_kwargs
 
 
 def _print_pack_error(e):
@@ -226,11 +427,30 @@ def build_parser():
     gl.add_argument("--project")
     gl.add_argument("--weekly-budget", type=float, required=True, help="heti keret a fiók pénznemében")
     gl.add_argument("--yes", action="store_true")
+    sy = sub.add_parser("sync", help="napi szinkron és védelmek azonnal")
+    sy.add_argument("--project")
+    wk = sub.add_parser("weekly", help="heti kiértékelés azonnal (élesben módosít: --yes kell)")
+    wk.add_argument("--project")
+    wk.add_argument("--mail", action="store_true", help="a jelentést el is küldi levélben")
+    wk.add_argument("--no-ai", action="store_true", help="AI nélkül (keresési kifejezések elemzése és szövegcsere nélkül)")
+    wk.add_argument("--yes", action="store_true")
+    rp = sub.add_parser("report", help="az utolsó heti jelentés kiírása")
+    rp.add_argument("--project")
+    cb = sub.add_parser("confirm-budget", help="a Google Ads-ben látható keret elfogadása fék után")
+    cb.add_argument("--project")
+    cb.add_argument("--yes", action="store_true")
+    cb.add_argument("--enable", action="store_true", help="a fék által szüneteltetett kampányok visszakapcsolása")
+    sub.add_parser("tick", help="az esedékes feladatok egyszeri futtatása")
+    sub.add_parser("serve", help="a szolgáltatás: ütemező + /healthz")
+    sub.add_parser("healthcheck", help="a helyi /healthz lekérdezése (Docker)")
+    sub.add_parser("stop", help="STOP fájl létrehozása: a motor nem ír")
+    sub.add_parser("resume", help="STOP fájl törlése")
     return p
 
 
 COMMANDS = {"check": cmd_check, "status": cmd_status, "api-check": cmd_api_check, "plan": cmd_plan, "launch": cmd_launch,
-            "go-live": cmd_go_live}
+            "go-live": cmd_go_live, "sync": cmd_sync, "weekly": cmd_weekly, "report": cmd_report, "confirm-budget": cmd_confirm_budget,
+            "tick": cmd_tick, "serve": cmd_serve, "healthcheck": cmd_healthcheck, "stop": cmd_stop, "resume": cmd_resume}
 
 
 def main(argv=None, env=None):

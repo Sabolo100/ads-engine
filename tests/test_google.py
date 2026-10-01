@@ -1,6 +1,7 @@
 """Google-oldali próbák: belépés (JWT), REST-kliens, hibaértelmezés, mutate (atomi, validateOnly), GAQL, leíró-ellenőrzés."""
 import base64
 import unittest
+import unittest.mock
 
 import _path  # noqa: F401
 import helpers
@@ -88,7 +89,7 @@ class AuthTests(unittest.TestCase):
         info = self.mock.service_account_info()
         ServiceAccount(info)
         buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
+        with unittest.mock.patch.dict("os.environ", {"ADS_LOG_LEVEL": "info"}), contextlib.redirect_stdout(buf):
             log.info("teszt", key=info["private_key"], lines=info["private_key"].splitlines()[1])
         self.assertNotIn("BEGIN PRIVATE KEY", buf.getvalue())
         self.assertIn("***", buf.getvalue())

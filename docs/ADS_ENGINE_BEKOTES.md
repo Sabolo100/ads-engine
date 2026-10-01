@@ -72,7 +72,7 @@ Séma: `schema/ads-brief.schema.json`. Kötelező: `schema_version`, `project`, 
 | `keywords.negatives[]` | nem | kezdő negatív kulcsszavak (kifejezés típusúak) – ami a hirdetett dologtól eltérő keresés (pl. „eladó”, „ár”, „letöltés”) |
 | `keywords.competitor_brands[]` | nem | versenytárs-márkanevek: sehol nem használja őket |
 | `tracking.umami_website_id` | nem | az Umami webhely-azonosító (a motor konfigja az irányadó) |
-| `tracking.engaged_events[]`, `tracking.key_events[]` | nem | melyik esemény jelent „bevont látogatást” / kulcscselekvést (5. pont) |
+| `tracking.visit_event`, `tracking.engaged_events[]`, `tracking.key_events[]` | nem | melyik esemény tüzel látogatásonként egyszer (alap: `inditas`) / jelent „bevont látogatást” (alap: `bevont`) / kulcscselekvést (5. pont) |
 | `ads.max_cpc` | nem | kattintásonkénti plafon a fiók pénznemében |
 | `ads.business_name` | nem | cégnév a hirdetésekben (≤ 25) |
 | `brand` | nem | `colors`, `fonts`, `logo`, `image_style_prompt`, `reference_images[]`: az AI-képgeneráláshoz |

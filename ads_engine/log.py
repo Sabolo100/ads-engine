@@ -5,9 +5,11 @@ A titkokat a konfiguráció betöltésekor kell regisztrálni: log.add_secret(é
 """
 import datetime as dt
 import json
+import os
 import sys
 
 _SECRETS = set()
+_LEVELS = {"info": 0, "warn": 1, "error": 2}
 
 
 def add_secret(value):
@@ -31,6 +33,9 @@ def redact(text):
 
 
 def _emit(level, event, **fields):
+    """ADS_LOG_LEVEL=info|warn|error: a kisebb szintű sorokat elhagyja (a próbák csendben futnak)."""
+    if _LEVELS[level] < _LEVELS.get(os.environ.get("ADS_LOG_LEVEL", "info"), 0):
+        return
     rec = {"ts": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "level": level, "event": event}
     rec.update(fields)
     line = json.dumps(rec, ensure_ascii=False, default=str)

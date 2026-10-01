@@ -17,8 +17,9 @@ MAX_IMAGE_BYTES = 12_000_000
 
 
 class PackError(Exception):
-    def __init__(self, problems):
+    def __init__(self, problems, kind="invalid"):
         self.problems = list(problems)
+        self.kind = kind                      # "fetch": az oldal nem érhető el (átmeneti) · "invalid": a csomag hibás
         head = "; ".join(self.problems[:4])
         super().__init__(f"Az Ads Pack nem használható ({len(self.problems)} hiba): {head}")
 
@@ -87,22 +88,31 @@ def _get_json(url, project, store, key, fetch, **fetch_kw):
     return data, True
 
 
-def load(project, store=None, fetch=net.fetch, **fetch_kw):
-    """A projekt csomagja: brief + creatives, ellenőrizve. PackError, ha bármi hibás (a hibalistával)."""
+def load_brief(project, store=None, fetch=net.fetch, **fetch_kw):
+    """Csak a brief (a szabályok és tények forrása): letöltés ETag-gyorsítótárral + ellenőrzés. (brief, figyelmeztetések, változott-e).
+    PackError, ha nem tölthető le (kind="fetch") vagy hibás (kind="invalid"). Az érvényes brief az „utolsó érvényes” példány lesz."""
     try:
-        brief, c1 = _get_json(project.brief_url, project, store, "brief", fetch, **fetch_kw)
+        brief, changed = _get_json(project.brief_url, project, store, "brief", fetch, **fetch_kw)
     except net.FetchError as e:
-        raise PackError([f"A brief nem tölthető le: {e}"]) from None
+        raise PackError([f"A brief nem tölthető le: {e}"], kind="fetch") from None
     errs, warns = validate_brief(brief, project)
     if errs:
         raise PackError([f"brief: {e}" for e in errs])
+    if store:
+        store.put(f"{project.slug}.valid.brief", brief)             # ha az oldal később nem elérhető vagy a brief elromlik, ezzel dolgozunk tovább
+    return brief, warns, changed
+
+
+def load(project, store=None, fetch=net.fetch, **fetch_kw):
+    """A projekt csomagja: brief + creatives, ellenőrizve. PackError, ha bármi hibás (a hibalistával)."""
+    brief, warns, c1 = load_brief(project, store, fetch, **fetch_kw)
     creatives, c2, creatives_url = {"schema_version": 1, "version": "motor-generalt", "adsets": []}, False, ""
     if brief.get("creatives_url"):
         creatives_url = resolve(project.brief_url, brief["creatives_url"])
         try:
             creatives, c2 = _get_json(creatives_url, project, store, "creatives", fetch, **fetch_kw)
         except net.FetchError as e:
-            raise PackError([f"A creatives.json nem tölthető le: {e}"]) from None
+            raise PackError([f"A creatives.json nem tölthető le: {e}"], kind="fetch") from None
         cerrs, cwarns = validate_creatives(creatives, brief)
         warns += cwarns
         if cerrs:

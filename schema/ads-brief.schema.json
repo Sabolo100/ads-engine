@@ -94,6 +94,7 @@
       "type": "object", "additionalProperties": false,
       "properties": {
         "umami_website_id": {"type": "string", "maxLength": 64},
+        "visit_event": {"type": "string", "maxLength": 50, "description": "Az az esemény, ami látogatásonként egyszer tüzel (alap: inditas). Ebből számolja a motor a hirdetésekből jövő látogatásokat."},
         "engaged_events": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 50}, "description": "Az az esemény, ami „bevont látogatást” jelent (oldalbetöltésenként egyszer; Pacsi: bevont)."},
         "key_events": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 50}, "description": "A legfontosabb cselekvések (Pacsi: kviz-kesz, kartya)."}
       }

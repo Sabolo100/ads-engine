@@ -87,6 +87,11 @@ class NetTests(unittest.TestCase):
             self.fetch("/big", max_bytes=1000)
         self.assertIn("túl nagy", str(cm.exception))
 
+    def test_truncate_reads_only_the_start_of_a_big_page(self):
+        r = self.fetch("/big", max_bytes=1000, truncate=True)             # a nagy (egyfájlos PWA) oldal elérhető, csak az elejét olvassuk
+        self.assertEqual((r.status, len(r.body)), (200, 1000))
+        self.assertEqual(self.fetch("/big", max_bytes=10_000_000, truncate=True).status, 200)
+
     def test_404_and_etag_304(self):
         with self.assertRaises(net.FetchError):
             self.fetch("/ads/nincs.json")

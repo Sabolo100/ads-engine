@@ -229,6 +229,7 @@
   },
   "tracking": {
     "umami_website_id": "54fc0966-6e5f-4ad6-b8c3-7ea5af9642e9",
+    "visit_event": "inditas",
     "engaged_events": [
       "bevont"
     ],
